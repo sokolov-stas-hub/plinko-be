@@ -23,47 +23,50 @@ export class BetsService {
       throw new BadRequestException(`amount must be between ${minBet} and ${maxBet}`);
     }
 
-    return this.prisma.$transaction(async tx => {
-      const seed = await this.seeds.lockActiveForUpdate(tx, userId);
-      const nonceAtBet = seed.nonce;
-      const result = play(seed.serverSeed, seed.clientSeed, nonceAtBet, rows, risk);
-      const payout = this.wallet.computePayout(amount, result.multiplier);
-      const { balanceAfter } = await this.wallet.lockAndApply(tx, userId, amount, payout);
-      await this.seeds.advanceNonce(tx, seed.id, nonceAtBet + 1);
+    return this.prisma.$transaction(
+      async tx => {
+        const seed = await this.seeds.lockActiveForUpdate(tx, userId);
+        const nonceAtBet = seed.nonce;
+        const result = play(seed.serverSeed, seed.clientSeed, nonceAtBet, rows, risk);
+        const payout = this.wallet.computePayout(amount, result.multiplier);
+        const { balanceAfter } = await this.wallet.lockAndApply(tx, userId, amount, payout);
+        await this.seeds.advanceNonce(tx, seed.id, nonceAtBet + 1);
 
-      const bet = await tx.bet.create({
-        data: {
-          userId,
-          seedId: seed.id,
-          nonce: nonceAtBet,
-          amount,
-          rows,
-          risk,
-          path: result.path.join(''),
-          bucketIndex: result.bucketIndex,
-          multiplier: new Prisma.Decimal(result.multiplier),
-          payout,
-          balanceAfter,
-        },
-      });
+        const bet = await tx.bet.create({
+          data: {
+            userId,
+            seedId: seed.id,
+            nonce: nonceAtBet,
+            amount,
+            rows,
+            risk,
+            path: result.path.join(''),
+            bucketIndex: result.bucketIndex,
+            multiplier: new Prisma.Decimal(result.multiplier),
+            payout,
+            balanceAfter,
+          },
+        });
 
-      return {
-        betId: bet.id,
-        amount: bet.amount,
-        rows: bet.rows,
-        risk: bet.risk,
-        path: bet.path,
-        bucketIndex: bet.bucketIndex,
-        multiplier: bet.multiplier.toString(),
-        payout: bet.payout,
-        balanceAfter: bet.balanceAfter,
-        seed: {
-          serverSeedHash: seed.serverSeedHash,
-          clientSeed: seed.clientSeed,
-          nonce: nonceAtBet,
-        },
-      };
-    });
+        return {
+          betId: bet.id,
+          amount: bet.amount,
+          rows: bet.rows,
+          risk: bet.risk,
+          path: bet.path,
+          bucketIndex: bet.bucketIndex,
+          multiplier: bet.multiplier.toString(),
+          payout: bet.payout,
+          balanceAfter: bet.balanceAfter,
+          seed: {
+            serverSeedHash: seed.serverSeedHash,
+            clientSeed: seed.clientSeed,
+            nonce: nonceAtBet,
+          },
+        };
+      },
+      { maxWait: 30_000, timeout: 30_000 },
+    );
   }
 
   async list(userId: string, q: { limit?: number; cursor?: string; risk?: Risk; rows?: number }) {
