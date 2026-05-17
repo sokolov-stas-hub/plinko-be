@@ -4,6 +4,8 @@ import { Observable, map } from 'rxjs';
 function convert(value: unknown): unknown {
   if (typeof value === 'bigint') return value.toString();
   if (Array.isArray(value)) return value.map(convert);
+  if (value instanceof Date) return value;
+  if (Buffer.isBuffer(value)) return value;
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value)) out[k] = convert(v);
