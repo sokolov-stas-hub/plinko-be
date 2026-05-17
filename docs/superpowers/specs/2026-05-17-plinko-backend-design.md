@@ -320,7 +320,7 @@ export const PAYOUT_TABLES: Record<Risk, Record<number, number[]>> = {
    - `clientSeed = crypto.randomBytes(16).toString('hex')` (user can override while `nonce == 0`)
    - `nonce = 0`
 2. **Player view (`GET /seeds/active`):** sees `serverSeedHash`, `clientSeed`, `nonce`. The hash is a commitment.
-3. **Each bet:** transaction increments `nonce`, calls `play(...)`, stores `(seedId, nonce, path, multiplier, payout)` in the bet.
+3. **Each bet:** transaction reads the current `nonce` (call it `N`), calls `play(serverSeed, clientSeed, N, ...)`, persists the bet with `nonce = N`, then sets `nonce = N + 1` on the seed. The next bet sees `N + 1`.
 4. **Rotate (`POST /seeds/rotate`):**
    - Old seed: `status = REVEALED`, `revealedAt = now()`. From now on `GET /seeds/:id` returns the raw `serverSeed`.
    - Player verifies `sha256(serverSeed) === serverSeedHash` and re-runs the HMAC for each historical bet to confirm `path`/`bucketIndex`.
