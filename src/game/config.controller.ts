@@ -1,8 +1,10 @@
 import { Controller, Get } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ApiTags } from '@nestjs/swagger';
 import { PAYOUT_TABLES } from './payout-tables';
 import { MAX_ROWS, MIN_ROWS, RISKS } from './types';
 
+@ApiTags('game')
 @Controller('game/config')
 export class GameConfigController {
   constructor(private readonly cfg: ConfigService) {}

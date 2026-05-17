@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAccessGuard } from '../auth/jwt-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AuthUser } from '../auth/types';
@@ -6,6 +7,8 @@ import { BetsService } from './bets.service';
 import { CreateBetDto } from './dto/create-bet.dto';
 import { ListBetsQuery } from './dto/list-bets.query';
 
+@ApiTags('bets')
+@ApiBearerAuth('access-token')
 @Controller('bets')
 @UseGuards(JwtAccessGuard)
 export class BetsController {

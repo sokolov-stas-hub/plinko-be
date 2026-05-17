@@ -1,9 +1,12 @@
 import { Controller, Get, NotFoundException, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAccessGuard } from '../auth/jwt-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AuthUser } from '../auth/types';
 import { UsersService } from './users.service';
 
+@ApiTags('users')
+@ApiBearerAuth('access-token')
 @Controller('users')
 @UseGuards(JwtAccessGuard)
 export class UsersController {

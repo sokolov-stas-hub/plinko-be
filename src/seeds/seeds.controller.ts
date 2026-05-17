@@ -1,4 +1,5 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAccessGuard } from '../auth/jwt-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AuthUser } from '../auth/types';
@@ -6,6 +7,8 @@ import { SeedsService } from './seeds.service';
 import { UpdateClientSeedDto } from './dto/update-client-seed.dto';
 import { RotateSeedDto } from './dto/rotate-seed.dto';
 
+@ApiTags('seeds')
+@ApiBearerAuth('access-token')
 @Controller('seeds')
 @UseGuards(JwtAccessGuard)
 export class SeedsController {
