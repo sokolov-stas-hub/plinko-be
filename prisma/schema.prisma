@@ -1,0 +1,83 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String
+  balance       BigInt   @default(0)
+  createdAt     DateTime @default(now())
+
+  bets          Bet[]
+  seeds         Seed[]
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Seed {
+  id             String     @id @default(uuid())
+  userId         String
+  serverSeed     String
+  serverSeedHash String
+  clientSeed     String
+  nonce          Int        @default(0)
+  status         SeedStatus @default(ACTIVE)
+  createdAt      DateTime   @default(now())
+  revealedAt     DateTime?
+
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bets           Bet[]
+
+  @@index([userId, status])
+}
+
+enum SeedStatus {
+  ACTIVE
+  REVEALED
+}
+
+model Bet {
+  id           String   @id @default(uuid())
+  userId       String
+  seedId       String
+  nonce        Int
+  amount       BigInt
+  rows         Int
+  risk         Risk
+  path         String
+  bucketIndex  Int
+  multiplier   Decimal  @db.Decimal(10, 4)
+  payout       BigInt
+  balanceAfter BigInt
+  createdAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id])
+  seed         Seed     @relation(fields: [seedId], references: [id])
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@unique([seedId, nonce])
+}
+
+enum Risk {
+  LOW
+  MEDIUM
+  HIGH
+}
