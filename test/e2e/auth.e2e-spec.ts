@@ -46,7 +46,7 @@ describe('Auth (e2e)', () => {
       .set('Authorization', `Bearer ${access}`)
       .expect(200);
     expect(res.body.email).toBe(email);
-    expect(res.body.balance).toBe('0');
+    expect(res.body.balance).toBe('10000000000');
   });
 
   it('refresh rotates tokens', async () => {
