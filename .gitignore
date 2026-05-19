@@ -6,3 +6,6 @@ coverage
 .env.test
 .DS_Store
 *.log
+
+# Claude Code per-user settings
+.claude/settings.local.json
