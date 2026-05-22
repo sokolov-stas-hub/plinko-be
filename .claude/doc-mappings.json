@@ -1,0 +1,58 @@
+{
+  "_description": "Source-to-doc mapping for plinko-be agent workflow. Keys are file paths or directory prefixes (with trailing slash). Values list every doc/skill/rule that must be re-read when the source matches. Consumed by future scripts/audit-docs.mjs and scripts/check-doc-freshness.sh (see docs/superpowers/plans/2026-05-19-ai-workflow.md, Фаза 5). The path-scoped rule globs in .claude/rules/*.md frontmatter remain the machine-readable source of truth for rule routing; this file additionally captures module docs and skill routing.",
+  "docs": {
+    "src/auth/": ["docs/modules/auth.md"],
+    "src/users/": ["docs/modules/users.md"],
+    "src/game/": ["docs/modules/game.md"],
+    "src/bets/": ["docs/superpowers/specs/2026-05-17-plinko-backend-design.md"],
+    "src/wallet/": ["docs/superpowers/specs/2026-05-17-plinko-backend-design.md"],
+    "src/seeds/": ["docs/superpowers/specs/2026-05-17-plinko-backend-design.md"],
+    "src/common/": ["README.md"],
+    "src/config/": ["README.md"],
+    "src/prisma/": ["README.md"],
+    "prisma/schema.prisma": ["docs/superpowers/specs/2026-05-17-plinko-backend-design.md"],
+    "prisma/migrations/": ["docs/superpowers/specs/2026-05-17-plinko-backend-design.md"],
+    "Dockerfile": ["README.md"],
+    "fly.toml": ["README.md"],
+    ".github/workflows/ci.yml": ["README.md"]
+  },
+  "skills": {
+    "src/": [".claude/skills/pre-commit/SKILL.md"],
+    "test/": [".claude/skills/pre-commit/SKILL.md"],
+    "prisma/": [".claude/skills/pre-commit/SKILL.md"],
+    "Dockerfile": [".claude/skills/deploy-flow/SKILL.md"],
+    "fly.toml": [".claude/skills/deploy-flow/SKILL.md"],
+    ".github/workflows/": [".claude/skills/deploy-flow/SKILL.md"]
+  },
+  "rules": {
+    "src/auth/": [".claude/rules/auth.md", ".claude/rules/api.md"],
+    "src/users/": [".claude/rules/auth.md", ".claude/rules/api.md", ".claude/rules/prisma.md"],
+    "src/bets/": [".claude/rules/bets.md", ".claude/rules/api.md", ".claude/rules/prisma.md"],
+    "src/wallet/": [".claude/rules/bets.md", ".claude/rules/prisma.md"],
+    "src/game/": [".claude/rules/seeds.md", ".claude/rules/bets.md", ".claude/rules/api.md"],
+    "src/seeds/": [".claude/rules/seeds.md", ".claude/rules/prisma.md"],
+    "src/common/": [".claude/rules/api.md"],
+    "src/main.ts": [".claude/rules/api.md"],
+    "src/prisma/": [".claude/rules/prisma.md"],
+    "prisma/schema.prisma": [".claude/rules/prisma.md", ".claude/rules/bets.md", ".claude/rules/auth.md", ".claude/rules/seeds.md"],
+    "prisma/migrations/": [".claude/rules/prisma.md"],
+    "test/e2e/": [".claude/rules/api.md"]
+  },
+  "introOnlyDocs": [
+    "docs/superpowers/specs/2026-05-18-plinko-frontend-requirements.md",
+    "docs/superpowers/plans/2026-05-17-plinko-backend.md",
+    "docs/superpowers/plans/2026-05-19-ai-workflow.md"
+  ],
+  "auditIgnore": [
+    ".env",
+    ".env.example",
+    ".env.local",
+    ".env.test",
+    ".claude/settings.local.json",
+    ".claude/.precommit-skill-ran",
+    ".claude/hooks/",
+    "dist/",
+    "node_modules/",
+    "coverage/"
+  ]
+}

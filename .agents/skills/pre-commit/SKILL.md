@@ -1,6 +1,6 @@
 ---
 name: pre-commit
-description: Use before every `git commit` in plinko-be to run typecheck/lint/related tests and verify that path-scoped rules in .claude/rules/ are still accurate for the changed source files
+description: Use before every `git commit` in plinko-be to run typecheck/lint/related tests and verify that path-scoped rules in .Codex/rules/ are still accurate for the changed source files
 ---
 
 # Pre-commit workflow
@@ -17,9 +17,9 @@ The scripts are the source of truth: their output is what blocks or releases a c
 
 ## When to use
 
-- Use before any `git commit` that touches `src/`, `test/`, `prisma/`, `Dockerfile`, `fly.toml`, `.github/workflows/`, or `.claude/`.
-- Skip only for pure markdown changes outside `.claude/rules/` (e.g. `README.md`, `docs/` not under `.claude/`).
-- This skill is the manual version of the future `.claude/hooks/pre-commit-gate.sh` (planned in Фаза 7 of [docs/superpowers/plans/2026-05-19-ai-workflow.md](../../../docs/superpowers/plans/2026-05-19-ai-workflow.md)). The validation scripts already exist (Фаза 5); the Claude `PreToolUse` gate that enforces them automatically does not. Until the hook lands, you run them by hand.
+- Use before any `git commit` that touches `src/`, `test/`, `prisma/`, `Dockerfile`, `fly.toml`, `.github/workflows/`, or `.Codex/`.
+- Skip only for pure markdown changes outside `.Codex/rules/` (e.g. `README.md`, `docs/` not under `.Codex/`).
+- This skill is the manual version of the future `.Codex/hooks/pre-commit-gate.sh` (planned in Фаза 7 of [docs/superpowers/plans/2026-05-19-ai-workflow.md](../../../docs/superpowers/plans/2026-05-19-ai-workflow.md)). The validation scripts already exist (Фаза 5); the Codex `PreToolUse` gate that enforces them automatically does not. Until the hook lands, you run them by hand.
 
 ## Workflow
 
@@ -37,7 +37,7 @@ Categorize changed files:
 - **tests:** `src/**/*.spec.ts`, `test/e2e/**/*.e2e-spec.ts`
 - **schema:** `prisma/schema.prisma`, `prisma/migrations/**`
 - **build/deploy:** `Dockerfile`, `fly.toml`, `.github/workflows/**`, `package.json`, `nest-cli.json`, `tsconfig*.json`
-- **rules/skills:** `.claude/rules/**`, `.claude/skills/**`, `CLAUDE.md`
+- **rules/skills:** `.Codex/rules/**`, `.Codex/skills/**`, `AGENTS.md`
 
 ### Step 2 — Mechanical checks
 
@@ -100,9 +100,9 @@ Per-subsystem hint when you do add a test:
 
 This script:
 
-1. Verifies every path in [.claude/doc-mappings.json](../../doc-mappings.json) exists (mapping integrity).
-2. Verifies every `.claude/rules/*.md` has a block-style `paths:` YAML frontmatter whose static prefixes resolve to real directories.
-3. Warns if `CLAUDE.md` grows past 300 lines (subsystem detail belongs in `.claude/rules/`, not the entrypoint).
+1. Verifies every path in [.Codex/doc-mappings.json](../../doc-mappings.json) exists (mapping integrity).
+2. Verifies every `.Codex/rules/*.md` has a block-style `paths:` YAML frontmatter whose static prefixes resolve to real directories.
+3. Warns if `AGENTS.md` grows past 300 lines (subsystem detail belongs in `.Codex/rules/`, not the entrypoint).
 4. For every changed file vs base, prints the docs/skills/rules the agent must **re-read** before committing. Files under `docs/superpowers/{plans,specs}/` are warnings, not blockers (durable project history).
 5. Runs `node scripts/audit-docs.mjs --check` — backtick paths that don't exist, PascalCase Service/Controller/Module/etc. identifiers not present anywhere in `src/`, honouring `auditIgnore` from the mapping file.
 
@@ -146,13 +146,13 @@ npm run lint
 |---|---|
 | Running `npm test` directly instead of `./scripts/run-related-tests.sh staged` | The script also triggers `npm run test:e2e` when an e2e spec changed; bare `npm test` skips e2e silently. |
 | Skipping `check-test-coverage.sh` on a "small" src change | The script is the gate. If you really need to skip it, write the waiver in the commit body. |
-| `git add -A` after a long session | Stages unrelated artifacts (`coverage/`, scratch files, `.claude/.precommit-skill-ran`). Add by name. |
+| `git add -A` after a long session | Stages unrelated artifacts (`coverage/`, scratch files, `.Codex/.precommit-skill-ran`). Add by name. |
 | Editing `prisma/schema.prisma` without `prisma:generate` | `npm run typecheck` will lie because the client types are stale. |
-| Updating `src/bets/bets.service.ts` but not `.claude/rules/bets.md` when adding a new lock or invariant | The rule now misleads future agents. `check-doc-freshness.sh` flags the file; you still have to update the rule. |
+| Updating `src/bets/bets.service.ts` but not `.Codex/rules/bets.md` when adding a new lock or invariant | The rule now misleads future agents. `check-doc-freshness.sh` flags the file; you still have to update the rule. |
 | Adding a new env var to `EnvSchema` without updating `.env.example` and `.github/workflows/ci.yml` | CI will fail to boot; new contributors won't know to set it. |
-| Adding a new HTTP error shape | Update `.claude/rules/api.md` — the response shape is part of the public contract. |
+| Adding a new HTTP error shape | Update `.Codex/rules/api.md` — the response shape is part of the public contract. |
 | Treating `LOG_LEVEL=warn` e2e flakes as "transient" | Read the failure. The concurrency tests catch real bugs. |
-| `audit-docs` warns about a planned-but-missing path | Either land the path now or add it to `auditIgnore` in `.claude/doc-mappings.json` with a comment. Don't paper over real drift. |
+| `audit-docs` warns about a planned-but-missing path | Either land the path now or add it to `auditIgnore` in `.Codex/doc-mappings.json` with a comment. Don't paper over real drift. |
 
 ## Red flags — STOP and re-run the checklist
 
@@ -169,4 +169,4 @@ npm run lint
 - **Unit tests** pin pure-function contracts (engine determinism, payout math, password hashing).
 - **E2E tests** catch the things unit tests can't: HTTP shape, transaction concurrency, validation pipe behavior, exception filter output.
 - **Test coverage policy** prevents "stealth behavior changes" — a bug fix without a regression test will come back.
-- **Rules freshness** keeps `.claude/rules/` trustworthy. The moment the rules drift from reality, agents will follow stale guidance and re-introduce old bugs.
+- **Rules freshness** keeps `.Codex/rules/` trustworthy. The moment the rules drift from reality, agents will follow stale guidance and re-introduce old bugs.
