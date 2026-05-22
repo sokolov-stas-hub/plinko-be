@@ -24,7 +24,7 @@ The backend owns Checkout Session creation, webhook verification, idempotent ful
 
 The game screen adds an `Add demo credits` action near the balance display. Opening it shows fixed packages:
 
-| Package | Demo credits | Test Checkout price |
+| Package | Balance added | Test Checkout price |
 |---|---:|---:|
 | starter | 10,000 | USD 1.00 |
 | standard | 50,000 | USD 5.00 |
@@ -34,7 +34,23 @@ After the player chooses a package, the frontend calls the backend to create a C
 
 When Stripe redirects back to the frontend success page, the frontend refreshes `GET /api/v1/users/me` and `GET /api/v1/payments/top-ups`. The frontend may show a short pending state because the webhook is the authority for fulfillment.
 
-## 4. Backend Architecture
+## 4. Credits and Balance Model
+
+Use one domain currency throughout the app:
+
+- `credits` is the user-facing name of the game currency.
+- `User.balance` is the user's credit balance stored in minimal units.
+- There is no separate "credit" ledger or second wallet currency in this scope.
+- All balance-changing values use the existing fixed precision: 1 displayed credit equals `1_000_000` minimal units.
+- API fields that represent wallet money are BigInt strings, matching existing bet and user responses.
+
+For Stripe top-ups, separate the two money domains clearly:
+
+- `creditAmount` is the amount added to `User.balance`, stored as minimal units.
+- `checkoutAmountCents` and `checkoutCurrency` describe the Stripe test-mode charge.
+- Frontend copy can say "Add demo credits", but backend invariants and DTOs should treat the result as a balance credit.
+
+## 5. Backend Architecture
 
 Add a `payments` module:
 
@@ -63,7 +79,7 @@ Responsibilities:
 
 The existing `wallet` service remains the only place that mutates balances. If its API is bet-specific, add a small transaction-aware credit helper rather than updating `User.balance` directly from `payments`.
 
-## 5. Data Model
+## 6. Data Model
 
 Add `PaymentTopUp` and `PaymentTopUpStatus` to Prisma:
 
@@ -72,12 +88,13 @@ model PaymentTopUp {
   id                      String             @id @default(uuid())
   userId                  String
   packageKey              String
-  credits                 BigInt
+  creditAmount            BigInt
   checkoutAmountCents     Int
   checkoutCurrency        String             @default("usd")
   stripeCheckoutSessionId String             @unique
   stripePaymentIntentId   String?            @unique
   status                  PaymentTopUpStatus @default(PENDING)
+  balanceAfter            BigInt?
   createdAt               DateTime           @default(now())
   fulfilledAt             DateTime?
   failedAt                DateTime?
@@ -96,9 +113,9 @@ enum PaymentTopUpStatus {
 }
 ```
 
-The `credits` field uses the same minimal-unit convention as bets and balances: 1 credit equals `1_000_000` minimal units. The package table stores human-facing credits, but the database stores minimal units.
+The `creditAmount` field uses the same minimal-unit convention as bets and balances. `balanceAfter` is set only after fulfillment and gives the frontend/audit trail the same post-mutation snapshot pattern used by `Bet.balanceAfter`.
 
-## 6. API Surface
+## 7. API Surface
 
 All routes are under `/api/v1`. The Checkout Session and history routes use the existing JWT guard. The webhook route is unauthenticated at the application layer and trusts only Stripe signature verification.
 
@@ -108,7 +125,7 @@ All routes are under `/api/v1`. The Checkout Session and history routes use the 
 | GET | `/payments/top-ups` | JWT | `?limit=20&cursor=<id>` | `{ items, nextCursor }` |
 | POST | `/payments/webhook` | Stripe signature | raw Stripe event body | `200` on accepted event |
 
-`POST /payments/checkout-session` creates a pending `PaymentTopUp`, calls Stripe, stores the Checkout Session ID, and returns the hosted Checkout URL. The Stripe metadata includes `userId`, `topUpId`, `packageKey`, and `credits`.
+`POST /payments/checkout-session` creates a pending `PaymentTopUp`, calls Stripe, stores the Checkout Session ID, and returns the hosted Checkout URL. The Stripe metadata includes `userId`, `topUpId`, `packageKey`, and `creditAmount`.
 
 `POST /payments/webhook` handles:
 
@@ -119,7 +136,7 @@ All routes are under `/api/v1`. The Checkout Session and history routes use the 
 
 Webhook handling returns `200` for recognized already-processed events so Stripe retries do not cause duplicate fulfillment.
 
-## 7. Fulfillment Invariants
+## 8. Fulfillment Invariants
 
 - The frontend never credits a balance.
 - A top-up can move from `PENDING` to `FULFILLED` only once.
@@ -128,11 +145,11 @@ Webhook handling returns `200` for recognized already-processed events so Stripe
   1. Lock/read the `PaymentTopUp`.
   2. If already fulfilled, return success without changing balance.
   3. Lock and credit the user's balance.
-  4. Mark the top-up `FULFILLED` with `fulfilledAt`.
-- The credited amount comes from the server-side package definition or the stored pending top-up, not from webhook metadata alone.
+  4. Mark the top-up `FULFILLED` with `fulfilledAt` and `balanceAfter`.
+- The credited amount comes from `PaymentTopUp.creditAmount`, which was derived from the server-side package definition, not from webhook metadata alone.
 - Webhook signature verification uses `STRIPE_WEBHOOK_SECRET` and the exact raw body.
 
-## 8. Configuration
+## 9. Configuration
 
 Required environment variables:
 
@@ -157,7 +174,7 @@ ${FRONTEND_URL}/wallet/success?session_id={CHECKOUT_SESSION_ID}
 ${FRONTEND_URL}/game?top_up=cancelled
 ```
 
-## 9. Frontend Contract
+## 10. Frontend Contract
 
 The frontend adds:
 
@@ -165,11 +182,11 @@ The frontend adds:
 - Loading state while creating the Checkout Session.
 - Redirect to `checkoutUrl`.
 - `/wallet/success` route that polls/refetches user balance and top-up history.
-- Top-up history list showing package, credits, status, and timestamp.
+- Top-up history list showing package, balance added, resulting balance when fulfilled, status, and timestamp.
 
 The success route must not claim credits were added until the backend reports either the updated balance or the fulfilled top-up.
 
-## 10. Error Handling
+## 11. Error Handling
 
 | Case | Backend behavior | Frontend behavior |
 |---|---|---|
@@ -180,11 +197,11 @@ The success route must not claim credits were added until the backend reports ei
 | Success redirect before webhook | top-up remains `PENDING` | Show pending state and poll briefly |
 | Duplicate webhook | `200`, no second credit | No user-facing action |
 
-## 11. Testing
+## 12. Testing
 
 Backend:
 
-- Unit test package validation and credits conversion.
+- Unit test package validation and `creditAmount` conversion to minimal units.
 - Unit test webhook service idempotency.
 - Unit test bad-signature rejection if practical around the Stripe helper.
 - E2E test authenticated Checkout Session creation with Stripe mocked.
@@ -196,7 +213,7 @@ Frontend:
 - Package modal renders fixed packages.
 - Creating a Checkout Session redirects to returned Checkout URL.
 - Success page shows pending until balance/top-up history updates.
-- Top-up history renders fulfilled and pending states.
+- Top-up history renders fulfilled and pending states, including balance-added and balance-after values.
 
 Manual local demo:
 
@@ -207,6 +224,6 @@ Manual local demo:
 5. Complete Checkout with Stripe test card data.
 6. Confirm the webhook fulfilled the top-up and the user balance increased exactly once.
 
-## 12. Compliance Boundary
+## 13. Compliance Boundary
 
 This integration is for Stripe test mode only. The current Plinko app is gambling-adjacent, and live payment processing for gambling or casino-style products is subject to Stripe restricted/prohibited business review and legal constraints. A future live-money version requires a separate design covering licensing, KYC, jurisdiction controls, responsible-gaming limits, refunds, disputes, accounting, and Stripe approval.
