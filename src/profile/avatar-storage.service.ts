@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import sharp from 'sharp';
 
+const SUPPORTED_AVATAR_FORMATS = new Set(['jpeg', 'png', 'webp']);
+
 @Injectable()
 export class AvatarStorageService {
   private readonly bucket: string;
@@ -24,6 +26,16 @@ export class AvatarStorageService {
   }
 
   async uploadAvatar(userId: string, image: Buffer): Promise<{ avatarKey: string; avatarUrl: string }> {
+    let format: string | undefined;
+    try {
+      ({ format } = await sharp(image).metadata());
+    } catch {
+      throw new BadRequestException('avatar image is invalid');
+    }
+    if (!format || !SUPPORTED_AVATAR_FORMATS.has(format)) {
+      throw new BadRequestException('avatar image must be a JPEG, PNG, or WebP image');
+    }
+
     let webp: Buffer;
     try {
       webp = await sharp(image).resize(256, 256, { fit: 'cover' }).webp({ quality: 82 }).toBuffer();

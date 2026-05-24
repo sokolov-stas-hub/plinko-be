@@ -8,6 +8,7 @@ describe('AvatarStorageService', () => {
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
     'base64',
   );
+  const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64');
   const cfg = {
     getOrThrow: jest.fn((key: string) => {
       const values: Record<string, string> = {
@@ -27,6 +28,13 @@ describe('AvatarStorageService', () => {
 
     await expect(service.uploadAvatar('user-1', Buffer.from('not image'))).rejects.toThrow(BadRequestException);
     await expect(service.uploadAvatar('user-1', Buffer.from('not image'))).rejects.toThrow('avatar image is invalid');
+  });
+
+  it('rejects valid images with unsupported decoded formats', async () => {
+    const service = new AvatarStorageService(cfg);
+
+    await expect(service.uploadAvatar('user-1', gif)).rejects.toThrow(BadRequestException);
+    await expect(service.uploadAvatar('user-1', gif)).rejects.toThrow('avatar image must be a JPEG, PNG, or WebP image');
   });
 
   it('maps storage failures to BadGatewayException', async () => {
