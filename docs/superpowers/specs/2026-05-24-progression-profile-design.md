@@ -150,7 +150,7 @@ model ProgressionRewardLedger {
   userId       String
   source       RewardSource
   sourceKey    String
-  periodKey    String?
+  periodKey    String
   creditAmount BigInt
   xpAmount     Int
   balanceAfter BigInt
@@ -182,6 +182,8 @@ enum RewardSource {
 ```
 
 `UserProfile` and `UserProgress` should be created during registration in the same transaction that creates the user and initial active seed. Existing users should get rows lazily on first profile or progression read.
+
+Every `ProgressionRewardLedger` row must store a concrete `periodKey` so the unique index is a reliable idempotency guard in PostgreSQL. Use the daily UTC date for daily bonuses and daily mission rewards, `starter` for starter mission rewards, and an explicit period key for any future reward source.
 
 ## 6. Profile and Avatar Rules
 

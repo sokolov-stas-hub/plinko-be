@@ -139,7 +139,7 @@ model ProgressionRewardLedger {
   userId       String
   source       RewardSource
   sourceKey    String
-  periodKey    String?
+  periodKey    String
   creditAmount BigInt
   xpAmount     Int
   balanceAfter BigInt

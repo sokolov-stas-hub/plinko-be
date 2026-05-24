@@ -238,7 +238,7 @@ model ProgressionRewardLedger {
   userId       String
   source       RewardSource
   sourceKey    String
-  periodKey    String?
+  periodKey    String
   creditAmount BigInt
   xpAmount     Int
   balanceAfter BigInt
@@ -268,6 +268,8 @@ enum RewardSource {
   MISSION
 }
 ```
+
+Every `ProgressionRewardLedger` row must store a concrete `periodKey` so PostgreSQL unique indexes enforce reward idempotency. Use the daily UTC date for daily bonus and daily mission rewards, `starter` for starter mission rewards, and an explicit period key for future reward sources.
 
 - [ ] **Step 2: Generate migration**
 
