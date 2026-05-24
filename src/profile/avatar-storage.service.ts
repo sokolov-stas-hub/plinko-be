@@ -1,5 +1,5 @@
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { Injectable } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import sharp from 'sharp';
@@ -24,18 +24,28 @@ export class AvatarStorageService {
   }
 
   async uploadAvatar(userId: string, image: Buffer): Promise<{ avatarKey: string; avatarUrl: string }> {
-    const webp = await sharp(image).resize(256, 256, { fit: 'cover' }).webp({ quality: 82 }).toBuffer();
+    let webp: Buffer;
+    try {
+      webp = await sharp(image).resize(256, 256, { fit: 'cover' }).webp({ quality: 82 }).toBuffer();
+    } catch {
+      throw new BadRequestException('avatar image is invalid');
+    }
+
     const avatarKey = `avatars/${userId}/${randomUUID()}.webp`;
 
-    await this.s3.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: avatarKey,
-        Body: webp,
-        ContentType: 'image/webp',
-        CacheControl: 'public, max-age=31536000, immutable',
-      }),
-    );
+    try {
+      await this.s3.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: avatarKey,
+          Body: webp,
+          ContentType: 'image/webp',
+          CacheControl: 'public, max-age=31536000, immutable',
+        }),
+      );
+    } catch {
+      throw new BadGatewayException('Avatar storage unavailable');
+    }
 
     return {
       avatarKey,

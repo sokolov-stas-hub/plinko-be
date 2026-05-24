@@ -17,6 +17,8 @@ function ensureAvatarEnv() {
 describe('Profile (e2e)', () => {
   let app: INestApplication;
   let access = '';
+  let userId = '';
+  let prisma: PrismaService;
   const avatarStorage = {
     uploadAvatar: jest.fn().mockResolvedValue({
       avatarKey: 'avatars/user/avatar.webp',
@@ -38,7 +40,7 @@ describe('Profile (e2e)', () => {
     app.useGlobalInterceptors(new BigIntInterceptor());
     await app.init();
 
-    const prisma = app.get(PrismaService);
+    prisma = app.get(PrismaService);
     for (const [index, nickname] of ['new_name_123', 'trimmed_name'].entries()) {
       await prisma.userProfile.updateMany({
         where: {
@@ -53,6 +55,7 @@ describe('Profile (e2e)', () => {
       .post('/api/v1/auth/register')
       .send({ email: `profile_${Date.now()}@test.local`, password: 'hunter22' });
     access = reg.body.accessToken;
+    userId = reg.body.user.id;
   });
 
   afterAll(async () => app.close());
@@ -109,6 +112,12 @@ describe('Profile (e2e)', () => {
       .attach('image', png, { filename: 'avatar.png', contentType: 'image/png' })
       .expect(201)
       .expect((res) => expect(res.body.avatarUrl).toBe('https://cdn.example.com/avatars/user/avatar.webp'));
+
+    expect(avatarStorage.uploadAvatar).toHaveBeenCalledWith(userId, expect.any(Buffer));
+    const profile = await prisma.userProfile.findUniqueOrThrow({ where: { userId } });
+    expect(profile.avatarKey).toBe('avatars/user/avatar.webp');
+    expect(profile.avatarUrl).toBe('https://cdn.example.com/avatars/user/avatar.webp');
+    expect(profile.avatarUpdatedAt).toBeInstanceOf(Date);
   });
 
   it('rejects non-image avatar upload', async () => {
@@ -117,5 +126,14 @@ describe('Profile (e2e)', () => {
       .set('Authorization', `Bearer ${access}`)
       .attach('image', Buffer.from('not image'), { filename: 'avatar.txt', contentType: 'text/plain' })
       .expect(400);
+  });
+
+  it('rejects oversized avatar upload', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/profile/avatar')
+      .set('Authorization', `Bearer ${access}`)
+      .attach('image', Buffer.alloc(2 * 1024 * 1024 + 1), { filename: 'avatar.png', contentType: 'image/png' })
+      .expect(400)
+      .expect((res) => expect(res.body.message).toBe('avatar image must be 2 MB or smaller'));
   });
 });

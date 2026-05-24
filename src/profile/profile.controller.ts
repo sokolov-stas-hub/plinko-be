@@ -9,10 +9,11 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import {
+  ApiBody,
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiConsumes,
   ApiCreatedResponse,
   ApiConflictResponse,
   ApiOkResponse,
@@ -22,6 +23,7 @@ import {
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAccessGuard } from '../auth/jwt-access.guard';
 import { AuthUser } from '../auth/types';
+import { AvatarUploadInterceptor } from './avatar-upload.interceptor';
 import { AvatarUploadResponse } from './dto/avatar-upload.response';
 import { ProfileResponse } from './dto/profile.response';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -51,18 +53,17 @@ export class ProfileController {
   }
 
   @Post('avatar')
-  @UseInterceptors(
-    FileInterceptor('image', {
-      limits: { fileSize: 2 * 1024 * 1024 },
-      fileFilter: (_req, file, cb) => {
-        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
-          cb(new BadRequestException('avatar must be a JPEG, PNG, or WebP image'), false);
-          return;
-        }
-        cb(null, true);
+  @UseInterceptors(AvatarUploadInterceptor)
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['image'],
+      properties: {
+        image: { type: 'string', format: 'binary' },
       },
-    }),
-  )
+    },
+  })
   @ApiOperation({ summary: 'Upload the authenticated player avatar' })
   @ApiCreatedResponse({ type: AvatarUploadResponse })
   @ApiBadRequestResponse({ description: 'Invalid or missing avatar image' })
