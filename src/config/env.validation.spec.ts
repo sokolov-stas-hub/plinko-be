@@ -56,8 +56,22 @@ describe('validateEnv', () => {
     };
 
     expect(validateEnv(valid).AVATAR_STORAGE_BUCKET).toBe('plinko-avatars');
-    expect(() => validateEnv({ ...valid, AVATAR_STORAGE_BUCKET: '' })).toThrow(
-      /Env validation failed/,
-    );
+
+    const avatarKeys = [
+      'AVATAR_STORAGE_ENDPOINT',
+      'AVATAR_STORAGE_REGION',
+      'AVATAR_STORAGE_BUCKET',
+      'AVATAR_STORAGE_ACCESS_KEY_ID',
+      'AVATAR_STORAGE_SECRET_ACCESS_KEY',
+      'AVATAR_PUBLIC_BASE_URL',
+    ];
+
+    for (const key of avatarKeys) {
+      expect(() => validateEnv({ ...valid, [key]: '' })).toThrow(/Env validation failed/);
+
+      const missing: Record<string, unknown> = { ...valid };
+      delete missing[key];
+      expect(() => validateEnv(missing)).toThrow(/Env validation failed/);
+    }
   });
 });
