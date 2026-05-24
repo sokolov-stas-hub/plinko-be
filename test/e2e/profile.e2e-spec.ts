@@ -4,13 +4,23 @@ import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { BigIntInterceptor } from '../../src/common/interceptors/bigint.interceptor';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { AvatarStorageService } from '../../src/profile/avatar-storage.service';
 
 describe('Profile (e2e)', () => {
   let app: INestApplication;
   let access = '';
+  const avatarStorage = {
+    uploadAvatar: jest.fn().mockResolvedValue({
+      avatarKey: 'avatars/user/avatar.webp',
+      avatarUrl: 'https://cdn.example.com/avatars/user/avatar.webp',
+    }),
+  };
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(AvatarStorageService)
+      .useValue(avatarStorage)
+      .compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1', { exclude: ['health'] });
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }));
@@ -73,6 +83,28 @@ describe('Profile (e2e)', () => {
       .patch('/api/v1/profile/me')
       .set('Authorization', `Bearer ${access}`)
       .send({ nickname: 'bad-name' })
+      .expect(400);
+  });
+
+  it('uploads an avatar and returns updated profile', async () => {
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+      'base64',
+    );
+
+    await request(app.getHttpServer())
+      .post('/api/v1/profile/avatar')
+      .set('Authorization', `Bearer ${access}`)
+      .attach('image', png, { filename: 'avatar.png', contentType: 'image/png' })
+      .expect(201)
+      .expect((res) => expect(res.body.avatarUrl).toBe('https://cdn.example.com/avatars/user/avatar.webp'));
+  });
+
+  it('rejects non-image avatar upload', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/profile/avatar')
+      .set('Authorization', `Bearer ${access}`)
+      .attach('image', Buffer.from('not image'), { filename: 'avatar.txt', contentType: 'text/plain' })
       .expect(400);
   });
 });

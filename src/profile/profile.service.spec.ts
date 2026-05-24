@@ -1,4 +1,5 @@
 import { PrismaService } from '../prisma/prisma.service';
+import { AvatarStorageService } from './avatar-storage.service';
 import { ProfileService } from './profile.service';
 
 describe('ProfileService', () => {
@@ -20,7 +21,8 @@ describe('ProfileService', () => {
         }),
       },
     } as unknown as PrismaService;
-    const service = new ProfileService(prisma);
+    const avatarStorage = {} as unknown as AvatarStorageService;
+    const service = new ProfileService(prisma, avatarStorage);
 
     const profile = await service.getMe('user-1');
 

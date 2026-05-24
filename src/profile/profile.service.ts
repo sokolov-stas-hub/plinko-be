@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { Prisma } from '@prisma/client';
 import { describeLevel } from '../progression/level-curve';
 import { PrismaService } from '../prisma/prisma.service';
+import { AvatarStorageService } from './avatar-storage.service';
 import { assertValidNickname, defaultNicknameBase } from './nickname';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ProfileResponse } from './dto/profile.response';
@@ -12,7 +13,10 @@ type ProfileAggregate = Prisma.UserGetPayload<{
 
 @Injectable()
 export class ProfileService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly avatarStorage: AvatarStorageService,
+  ) {}
 
   async getMe(userId: string): Promise<ProfileResponse> {
     const user = await this.prisma.user.findUnique({
@@ -49,6 +53,19 @@ export class ProfileService {
       }
       throw error;
     }
+  }
+
+  async uploadAvatar(userId: string, image: Buffer): Promise<ProfileResponse> {
+    const uploaded = await this.avatarStorage.uploadAvatar(userId, image);
+    await this.prisma.userProfile.update({
+      where: { userId },
+      data: {
+        avatarKey: uploaded.avatarKey,
+        avatarUrl: uploaded.avatarUrl,
+        avatarUpdatedAt: new Date(),
+      },
+    });
+    return this.getMe(userId);
   }
 
   private isNicknameConflict(error: unknown): boolean {
