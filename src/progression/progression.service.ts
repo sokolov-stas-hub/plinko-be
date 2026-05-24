@@ -23,6 +23,7 @@ export type BetProgressInput = {
 
 type MissionMetadata = {
   risks?: Risk[];
+  wageredAmount?: string;
 };
 
 type AppliedMission = UserMissionProgress & {
@@ -59,11 +60,14 @@ export function applyBetToMission(mission: AppliedMission, bet: BetProgressInput
     case 'count_risk':
       if (bet.risk === definition.rule.risk) next.progress += 1;
       break;
-    case 'wager_credits':
-      next.progress += Number(bet.amount / CREDIT_UNIT);
+    case 'wager_credits': {
+      const wageredAmount = parseWageredAmount(metadata.wageredAmount, mission.progress) + bet.amount;
+      next.metadata = { ...metadata, wageredAmount: wageredAmount.toString() };
+      next.progress = Number(wageredAmount / CREDIT_UNIT);
       break;
+    }
     case 'try_all_risks': {
-      const risks = [...(metadata.risks ?? [])];
+      const risks = uniqueRisks(metadata.risks ?? []);
       if (!risks.includes(bet.risk)) risks.push(bet.risk);
       next.metadata = { ...metadata, risks };
       next.progress = risks.length;
@@ -96,11 +100,36 @@ function cloneJson(value: Prisma.JsonValue | null): Prisma.JsonValue | null {
 
 function readMissionMetadata(value: Prisma.JsonValue | null): MissionMetadata {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  const risks = (value as { risks?: unknown }).risks;
-  if (!Array.isArray(risks)) return {};
-  return {
-    risks: risks.filter((risk): risk is Risk => risk === 'LOW' || risk === 'MEDIUM' || risk === 'HIGH'),
-  };
+  const metadata = value as { risks?: unknown; wageredAmount?: unknown };
+  const result: MissionMetadata = {};
+  if (typeof metadata.wageredAmount === 'string') {
+    result.wageredAmount = metadata.wageredAmount;
+  }
+  if (Array.isArray(metadata.risks)) {
+    result.risks = uniqueRisks(metadata.risks);
+  }
+  return result;
+}
+
+function uniqueRisks(values: unknown[]): Risk[] {
+  const risks: Risk[] = [];
+  for (const value of values) {
+    if ((value === 'LOW' || value === 'MEDIUM' || value === 'HIGH') && !risks.includes(value)) {
+      risks.push(value);
+    }
+  }
+  return risks;
+}
+
+function parseWageredAmount(value: string | undefined, progressFallback: number): bigint {
+  const fallback = BigInt(Math.max(0, progressFallback)) * CREDIT_UNIT;
+  if (!value) return fallback;
+  try {
+    const amount = BigInt(value);
+    return amount > 0n ? amount : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 @Injectable()

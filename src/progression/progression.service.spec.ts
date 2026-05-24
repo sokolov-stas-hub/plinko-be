@@ -84,6 +84,45 @@ describe('ProgressionService', () => {
     ).toMatchObject({ progress: 1000, status: 'COMPLETED' });
   });
 
+  it('carries wagered minimal-unit remainders in metadata', () => {
+    const first = applyBetToMission(missionFor('wager_1000_credits'), {
+      amount: 1_500_000n,
+      payout: 0n,
+      multiplier: 0,
+      risk: 'MEDIUM',
+    });
+
+    expect(first).toMatchObject({
+      progress: 1,
+      metadata: { wageredAmount: '1500000' },
+      status: 'ACTIVE',
+    });
+
+    expect(
+      applyBetToMission(first, {
+        amount: 1_500_000n,
+        payout: 0n,
+        multiplier: 0,
+        risk: 'MEDIUM',
+      }),
+    ).toMatchObject({
+      progress: 3,
+      metadata: { wageredAmount: '3000000' },
+      status: 'ACTIVE',
+    });
+  });
+
+  it('deduplicates existing risk metadata before updating progress', () => {
+    expect(
+      applyBetToMission(missionFor('try_all_risks', { progress: 2, metadata: { risks: ['LOW', 'LOW'] } }), {
+        amount: 1_000_000n,
+        payout: 0n,
+        multiplier: 0,
+        risk: 'HIGH',
+      }),
+    ).toMatchObject({ progress: 2, metadata: { risks: ['LOW', 'HIGH'] } });
+  });
+
   it('leaves completed missions unchanged', () => {
     expect(
       applyBetToMission(missionFor('first_win', { progress: 1, status: MissionStatus.COMPLETED }), {

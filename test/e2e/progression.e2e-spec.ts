@@ -132,6 +132,9 @@ describe('Progression (e2e)', () => {
 
     const afterDuplicateUser = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
     expect(afterDuplicateUser.balance).toBe(beforeUser.balance + 500_000_000n);
+    const afterDuplicateProgress = await prisma.userProgress.findUniqueOrThrow({ where: { userId } });
+    expect(afterDuplicateProgress.xp).toBe(beforeProgress.xp + 50);
+    expect(afterDuplicateProgress.level).toBe(claim.body.progression.level);
 
     const ledgerCount = await prisma.progressionRewardLedger.count({
       where: {

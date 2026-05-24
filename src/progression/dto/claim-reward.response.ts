@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RewardSource } from '@prisma/client';
 import { ProgressionResponse } from './progression.response';
 
@@ -11,8 +11,10 @@ export class ClaimedRewardResponse {
   /** UTC period key for the claim. */
   periodKey!: string;
   /** Claimed mission progress row id, for mission rewards. */
+  @ApiPropertyOptional()
   missionId?: string;
   /** Claimed mission key, for mission rewards. */
+  @ApiPropertyOptional()
   missionKey?: string;
   /** Credits in minimal units. Serialized as string because it can exceed Number.MAX_SAFE_INTEGER. */
   @ApiProperty({ type: String, example: '500000000' })
