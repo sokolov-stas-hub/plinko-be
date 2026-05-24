@@ -10,6 +10,10 @@ export class ClaimedRewardResponse {
   sourceKey!: string;
   /** UTC period key for the claim. */
   periodKey!: string;
+  /** Claimed mission progress row id, for mission rewards. */
+  missionId?: string;
+  /** Claimed mission key, for mission rewards. */
+  missionKey?: string;
   /** Credits in minimal units. Serialized as string because it can exceed Number.MAX_SAFE_INTEGER. */
   @ApiProperty({ type: String, example: '500000000' })
   credits!: bigint;

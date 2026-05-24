@@ -1,15 +1,32 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { MissionStatus, MissionType, Prisma, RewardSource, UserMissionProgress, UserProgress } from '@prisma/client';
+import { Risk } from '../game/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletService } from '../wallet/wallet.service';
 import { describeLevel, levelForXp } from './level-curve';
-import { MissionDefinition, selectDailyMissions, STARTER_MISSIONS } from './mission-definitions';
-import { ClaimRewardAggregate, ProgressionAggregate, ProgressionMission } from './types';
+import { DAILY_MISSIONS, MissionDefinition, selectDailyMissions, STARTER_MISSIONS } from './mission-definitions';
+import { ClaimRewardAggregate, ProgressionAggregate, ProgressionEvent, ProgressionMission } from './types';
 
 const STARTER_PERIOD_KEY = 'starter';
 const DAILY_BONUS_REWARD = {
   credits: 500_000_000n,
   xp: 25,
+};
+const CREDIT_UNIT = 1_000_000n;
+
+export type BetProgressInput = {
+  amount: bigint;
+  payout: bigint;
+  multiplier: number;
+  risk: Risk;
+};
+
+type MissionMetadata = {
+  risks?: Risk[];
+};
+
+type AppliedMission = UserMissionProgress & {
+  metadata: Prisma.JsonValue | null;
 };
 
 export function periodKey(date = new Date()): string {
@@ -18,6 +35,72 @@ export function periodKey(date = new Date()): string {
 
 export function nextUtcMidnight(date = new Date()): Date {
   return new Date(`${periodKey(new Date(date.getTime() + 24 * 60 * 60 * 1000))}T00:00:00.000Z`);
+}
+
+export function applyBetToMission(mission: AppliedMission, bet: BetProgressInput): AppliedMission {
+  if (mission.status !== MissionStatus.ACTIVE) return cloneMission(mission);
+
+  const definition = findMissionDefinition(mission.missionKey);
+  if (!definition) return cloneMission(mission);
+
+  const next = cloneMission(mission);
+  const metadata = readMissionMetadata(mission.metadata);
+
+  switch (definition.rule.kind) {
+    case 'count_bets':
+      next.progress += 1;
+      break;
+    case 'count_wins':
+      if (bet.payout > bet.amount) next.progress += 1;
+      break;
+    case 'hit_multiplier':
+      if (bet.multiplier >= definition.rule.multiplier) next.progress = mission.target;
+      break;
+    case 'count_risk':
+      if (bet.risk === definition.rule.risk) next.progress += 1;
+      break;
+    case 'wager_credits':
+      next.progress += Number(bet.amount / CREDIT_UNIT);
+      break;
+    case 'try_all_risks': {
+      const risks = [...(metadata.risks ?? [])];
+      if (!risks.includes(bet.risk)) risks.push(bet.risk);
+      next.metadata = { ...metadata, risks };
+      next.progress = risks.length;
+      break;
+    }
+  }
+
+  next.progress = Math.min(next.progress, mission.target);
+  if (next.progress >= mission.target) {
+    next.status = MissionStatus.COMPLETED;
+  }
+  return next;
+}
+
+function findMissionDefinition(missionKey: string): MissionDefinition | undefined {
+  return [...DAILY_MISSIONS, ...STARTER_MISSIONS].find(definition => definition.key === missionKey);
+}
+
+function cloneMission(mission: AppliedMission): AppliedMission {
+  return {
+    ...mission,
+    metadata: cloneJson(mission.metadata),
+  };
+}
+
+function cloneJson(value: Prisma.JsonValue | null): Prisma.JsonValue | null {
+  if (value === null) return null;
+  return JSON.parse(JSON.stringify(value)) as Prisma.JsonValue;
+}
+
+function readMissionMetadata(value: Prisma.JsonValue | null): MissionMetadata {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const risks = (value as { risks?: unknown }).risks;
+  if (!Array.isArray(risks)) return {};
+  return {
+    risks: risks.filter((risk): risk is Risk => risk === 'LOW' || risk === 'MEDIUM' || risk === 'HIGH'),
+  };
 }
 
 @Injectable()
@@ -136,6 +219,149 @@ export class ProgressionService {
     }
   }
 
+  async recordBet(tx: Prisma.TransactionClient, userId: string, bet: BetProgressInput): Promise<ProgressionEvent[]> {
+    const now = new Date();
+    const today = periodKey(now);
+    const dailyDefinitions = selectDailyMissions(userId, today);
+    await this.ensureMissions(tx, userId, today, dailyDefinitions, STARTER_PERIOD_KEY, STARTER_MISSIONS);
+
+    const missions = await tx.userMissionProgress.findMany({
+      where: {
+        userId,
+        status: MissionStatus.ACTIVE,
+        OR: [
+          { periodKey: today, type: MissionType.DAILY },
+          { periodKey: STARTER_PERIOD_KEY, type: MissionType.STARTER },
+        ],
+      },
+    });
+
+    const events: ProgressionEvent[] = [];
+    for (const mission of missions) {
+      const next = applyBetToMission(mission, bet);
+      if (next.progress === mission.progress && next.status === mission.status && jsonEquals(next.metadata, mission.metadata)) {
+        continue;
+      }
+
+      const completedAt =
+        mission.status !== MissionStatus.COMPLETED && next.status === MissionStatus.COMPLETED ? now : mission.completedAt;
+      await tx.userMissionProgress.update({
+        where: { id: mission.id },
+        data: {
+          progress: next.progress,
+          metadata: next.metadata ?? Prisma.JsonNull,
+          status: next.status,
+          completedAt,
+        },
+      });
+
+      events.push({
+        type: next.status === MissionStatus.COMPLETED ? 'MISSION_COMPLETED' : 'MISSION_PROGRESS',
+        missionId: mission.id,
+        missionKey: mission.missionKey,
+        progress: next.progress,
+        target: next.target,
+      });
+    }
+
+    return events;
+  }
+
+  async claimMission(userId: string, missionId: string): Promise<ClaimRewardAggregate> {
+    const now = new Date();
+
+    try {
+      return await this.prisma.$transaction(async tx => {
+        const mission = await tx.userMissionProgress.findFirst({
+          where: { id: missionId, userId },
+        });
+        if (!mission) {
+          throw new NotFoundException('Mission not found');
+        }
+        if (mission.status === MissionStatus.ACTIVE) {
+          throw new ConflictException('Mission is not complete');
+        }
+        if (mission.status === MissionStatus.CLAIMED) {
+          throw new ConflictException('Mission reward already claimed');
+        }
+
+        const progress = await tx.userProgress.upsert({
+          where: { userId },
+          create: { userId },
+          update: {},
+        });
+        const newXp = progress.xp + mission.xpReward;
+        const newLevel = levelForXp(newXp);
+        const { balanceAfter } = await this.wallet.lockAndCredit(tx, userId, mission.creditReward);
+
+        await tx.progressionRewardLedger.create({
+          data: {
+            userId,
+            source: RewardSource.MISSION,
+            sourceKey: mission.missionKey,
+            periodKey: mission.periodKey,
+            creditAmount: mission.creditReward,
+            xpAmount: mission.xpReward,
+            balanceAfter,
+            levelBefore: progress.level,
+            levelAfter: newLevel,
+          },
+        });
+
+        const updatedProgress = await tx.userProgress.update({
+          where: { userId },
+          data: {
+            xp: newXp,
+            level: newLevel,
+          },
+        });
+
+        await tx.userMissionProgress.update({
+          where: { id: mission.id },
+          data: {
+            status: MissionStatus.CLAIMED,
+            claimedAt: now,
+          },
+        });
+
+        const today = periodKey(now);
+        const dailyDefinitions = selectDailyMissions(userId, today);
+        await this.ensureMissions(tx, userId, today, dailyDefinitions, STARTER_PERIOD_KEY, STARTER_MISSIONS);
+        const missionRows = await tx.userMissionProgress.findMany({
+          where: {
+            userId,
+            OR: [
+              { periodKey: today, type: MissionType.DAILY },
+              { periodKey: STARTER_PERIOD_KEY, type: MissionType.STARTER },
+            ],
+          },
+        });
+
+        return {
+          reward: {
+            source: RewardSource.MISSION,
+            sourceKey: mission.missionKey,
+            periodKey: mission.periodKey,
+            missionId: mission.id,
+            missionKey: mission.missionKey,
+            credits: mission.creditReward,
+            xp: mission.xpReward,
+            balanceAfter,
+          },
+          progression: {
+            ...describeLevel(updatedProgress.xp),
+            ...this.serializeDailyAndMissions(now, today, updatedProgress, dailyDefinitions, missionRows),
+          },
+        };
+      });
+    } catch (error) {
+      if (this.isRewardLedgerUniqueConflict(error)) {
+        throw new ConflictException('Mission reward already claimed');
+      }
+      throw error;
+    }
+  }
+
   private async ensureMissions(
     db: Pick<Prisma.TransactionClient, 'userMissionProgress'>,
     userId: string,
@@ -181,6 +407,7 @@ export class ProgressionService {
     return definitions.map(definition => {
       const row = rows.find(item => item.missionKey === definition.key && item.periodKey === missionPeriodKey);
       return {
+        id: row?.id ?? null,
         key: definition.key,
         type: definition.type,
         title: definition.title,
@@ -235,4 +462,8 @@ export class ProgressionService {
     }
     return typeof target === 'string' && target.includes('ProgressionRewardLedger');
   }
+}
+
+function jsonEquals(left: Prisma.JsonValue | null, right: Prisma.JsonValue | null): boolean {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 }

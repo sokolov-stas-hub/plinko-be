@@ -3,7 +3,7 @@ import { MissionStatus, MissionType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletService } from '../wallet/wallet.service';
 import { STARTER_MISSIONS } from './mission-definitions';
-import { nextUtcMidnight, periodKey, ProgressionService } from './progression.service';
+import { applyBetToMission, nextUtcMidnight, periodKey, ProgressionService } from './progression.service';
 
 type PrismaMock = {
   $transaction?: jest.Mock;
@@ -24,7 +24,77 @@ function uniqueConflict(target: string[]): Prisma.PrismaClientKnownRequestError 
   });
 }
 
+type MissionForOptions = Partial<{
+  progress: number;
+  metadata: Prisma.JsonValue;
+  status: MissionStatus;
+}>;
+
+function missionFor(missionKey: string, options: MissionForOptions = {}) {
+  return {
+    id: `${missionKey}-id`,
+    userId: 'user-1',
+    missionKey,
+    periodKey: missionKey.startsWith('place_') || missionKey.startsWith('win_') ? '2026-05-24' : 'starter',
+    type: missionKey.startsWith('place_') || missionKey.startsWith('win_') ? MissionType.DAILY : MissionType.STARTER,
+    target: missionKey === 'try_all_risks' ? 3 : missionKey === 'wager_1000_credits' ? 1000 : 10,
+    progress: options.progress ?? 0,
+    metadata: options.metadata ?? null,
+    status: options.status ?? MissionStatus.ACTIVE,
+    creditReward: 500_000_000n,
+    xpReward: 50,
+    completedAt: null,
+    claimedAt: null,
+    createdAt: new Date('2026-05-24T00:00:00.000Z'),
+    updatedAt: new Date('2026-05-24T00:00:00.000Z'),
+  };
+}
+
 describe('ProgressionService', () => {
+  it('completes count bet missions when progress reaches target', () => {
+    expect(
+      applyBetToMission(missionFor('place_10_bets', { progress: 9 }), {
+        amount: 1_000_000n,
+        payout: 0n,
+        multiplier: 0,
+        risk: 'LOW',
+      }),
+    ).toMatchObject({ progress: 10, status: 'COMPLETED' });
+  });
+
+  it('tracks unique risks in mission metadata', () => {
+    expect(
+      applyBetToMission(missionFor('try_all_risks', { progress: 1, metadata: { risks: ['LOW'] } }), {
+        amount: 1_000_000n,
+        payout: 0n,
+        multiplier: 0,
+        risk: 'HIGH',
+      }),
+    ).toMatchObject({ progress: 2, metadata: { risks: ['LOW', 'HIGH'] } });
+  });
+
+  it('adds whole wagered credits and caps mission progress', () => {
+    expect(
+      applyBetToMission(missionFor('wager_1000_credits', { progress: 998 }), {
+        amount: 3_500_000n,
+        payout: 0n,
+        multiplier: 0,
+        risk: 'MEDIUM',
+      }),
+    ).toMatchObject({ progress: 1000, status: 'COMPLETED' });
+  });
+
+  it('leaves completed missions unchanged', () => {
+    expect(
+      applyBetToMission(missionFor('first_win', { progress: 1, status: MissionStatus.COMPLETED }), {
+        amount: 1_000_000n,
+        payout: 2_000_000n,
+        multiplier: 2,
+        risk: 'LOW',
+      }),
+    ).toMatchObject({ progress: 1, status: 'COMPLETED' });
+  });
+
   it('uses UTC date boundaries for progression periods', () => {
     const date = new Date('2026-05-24T23:30:00.000Z');
 

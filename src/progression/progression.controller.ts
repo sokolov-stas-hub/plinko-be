@@ -1,8 +1,9 @@
-import { Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -34,5 +35,14 @@ export class ProgressionController {
   @ApiConflictResponse({ description: 'Daily bonus already claimed for the current UTC period' })
   claimDaily(@CurrentUser() u: AuthUser): Promise<ClaimRewardResponse> {
     return this.progression.claimDaily(u.id);
+  }
+
+  @Post('missions/:id/claim')
+  @ApiOperation({ summary: 'Claim a completed mission reward' })
+  @ApiCreatedResponse({ type: ClaimRewardResponse })
+  @ApiConflictResponse({ description: 'Mission is incomplete or reward was already claimed' })
+  @ApiNotFoundResponse({ description: 'Mission not found' })
+  claimMission(@CurrentUser() u: AuthUser, @Param('id') id: string): Promise<ClaimRewardResponse> {
+    return this.progression.claimMission(u.id, id);
   }
 }

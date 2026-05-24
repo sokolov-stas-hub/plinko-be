@@ -20,6 +20,8 @@ export class ProgressionDailyResponse {
 }
 
 export class ProgressionMissionResponse {
+  /** User mission progress row id. */
+  id!: string | null;
   /** Stable mission key. */
   key!: string;
   /** Mission cadence. */

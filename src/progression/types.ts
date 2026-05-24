@@ -13,6 +13,7 @@ export type ProgressionDaily = {
 };
 
 export type ProgressionMission = {
+  id: string | null;
   key: string;
   type: MissionType;
   title: string;
@@ -42,6 +43,8 @@ export type ClaimedReward = {
   source: RewardSource;
   sourceKey: string;
   periodKey: string;
+  missionId?: string;
+  missionKey?: string;
   credits: bigint;
   xp: number;
   balanceAfter: bigint;
@@ -51,3 +54,21 @@ export type ClaimRewardAggregate = {
   reward: ClaimedReward;
   progression: ProgressionAggregate;
 };
+
+export type MissionProgressEvent =
+  | {
+      type: 'MISSION_PROGRESS';
+      missionId: string;
+      missionKey: string;
+      progress: number;
+      target: number;
+    }
+  | {
+      type: 'MISSION_COMPLETED';
+      missionId: string;
+      missionKey: string;
+      progress: number;
+      target: number;
+    };
+
+export type ProgressionEvent = MissionProgressEvent;

@@ -92,4 +92,55 @@ describe('Progression (e2e)', () => {
     });
     expect(ledgerCount).toBe(1);
   });
+
+  it('claims a completed mission once and updates balance and XP', async () => {
+    const progression = await request(app.getHttpServer())
+      .get('/api/v1/progression/me')
+      .set('Authorization', `Bearer ${access}`)
+      .expect(200);
+    const firstBet = progression.body.missions.starter.find((m: { key: string }) => m.key === 'first_bet');
+    expect(firstBet.id).toEqual(expect.any(String));
+
+    await prisma.userMissionProgress.update({
+      where: { id: firstBet.id },
+      data: { progress: 1, status: 'COMPLETED', completedAt: new Date() },
+    });
+
+    const beforeUser = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    const beforeProgress = await prisma.userProgress.findUniqueOrThrow({ where: { userId } });
+
+    const claim = await request(app.getHttpServer())
+      .post(`/api/v1/progression/missions/${firstBet.id}/claim`)
+      .set('Authorization', `Bearer ${access}`)
+      .expect(201);
+
+    expect(claim.body.reward.source).toBe('MISSION');
+    expect(claim.body.reward.missionId).toBe(firstBet.id);
+    expect(claim.body.reward.missionKey).toBe('first_bet');
+    expect(claim.body.reward.credits).toBe('500000000');
+    expect(claim.body.reward.xp).toBe(50);
+    expect(claim.body.reward.balanceAfter).toBe((beforeUser.balance + 500_000_000n).toString());
+    expect(claim.body.progression.xp).toBe(beforeProgress.xp + 50);
+    expect(
+      claim.body.progression.missions.starter.find((m: { key: string }) => m.key === 'first_bet').status,
+    ).toBe('CLAIMED');
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/progression/missions/${firstBet.id}/claim`)
+      .set('Authorization', `Bearer ${access}`)
+      .expect(409);
+
+    const afterDuplicateUser = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    expect(afterDuplicateUser.balance).toBe(beforeUser.balance + 500_000_000n);
+
+    const ledgerCount = await prisma.progressionRewardLedger.count({
+      where: {
+        userId,
+        source: 'MISSION',
+        sourceKey: 'first_bet',
+        periodKey: 'starter',
+      },
+    });
+    expect(ledgerCount).toBe(1);
+  });
 });
