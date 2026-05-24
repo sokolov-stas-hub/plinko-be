@@ -1,8 +1,9 @@
+import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { WalletService } from './wallet.service';
 
-describe('WalletService.applyBet (unit)', () => {
+describe('WalletService', () => {
   it('returns balance - amount + payout', () => {
     const svc = new WalletService();
     expect(svc.computeBalanceAfter(10_000n, 1000n, 2500n)).toBe(11_500n);
@@ -37,10 +38,30 @@ describe('WalletService.applyBet (unit)', () => {
     );
 
     expect(result).toEqual({ balanceBefore: 1_000_000n, balanceAfter: 1_500_000n });
+    const [sqlTemplate] = tx.$queryRaw.mock.calls[0] as [TemplateStringsArray, string];
+    expect(sqlTemplate.join('')).toMatch(/\bFOR\s+UPDATE\b/i);
     expect(tx.user.update).toHaveBeenCalledWith({
       where: { id: 'user-1' },
       data: { balance: 1_500_000n },
     });
+  });
+
+  it('rejects reward credits when the user cannot be locked', async () => {
+    const service = new WalletService();
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      user: { update: jest.fn() },
+    };
+
+    const credit = service.lockAndCredit(
+      tx as unknown as Prisma.TransactionClient,
+      'user-1',
+      500_000n,
+    );
+
+    await expect(credit).rejects.toThrow(BadRequestException);
+    await expect(credit).rejects.toThrow('User not found');
+    expect(tx.user.update).not.toHaveBeenCalled();
   });
 
   it('rejects negative reward credit amounts', async () => {
