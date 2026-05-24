@@ -230,7 +230,7 @@ Use integer XP. Level starts at 1.
 Recommended first curve:
 
 ```ts
-xpForLevel(level) = 100 * level * level
+xpForLevel(level) = level === 1 ? 0 : 100 * (level - 1) * (level - 1)
 ```
 
 Examples:
