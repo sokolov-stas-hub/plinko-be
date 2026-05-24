@@ -1,10 +1,18 @@
 import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
-import { AppModule } from '../../src/app.module';
 import { BigIntInterceptor } from '../../src/common/interceptors/bigint.interceptor';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { AvatarStorageService } from '../../src/profile/avatar-storage.service';
+
+function ensureAvatarEnv() {
+  process.env.AVATAR_STORAGE_ENDPOINT ??= 'https://example.r2.cloudflarestorage.com';
+  process.env.AVATAR_STORAGE_REGION ??= 'auto';
+  process.env.AVATAR_STORAGE_BUCKET ??= 'plinko-avatars';
+  process.env.AVATAR_STORAGE_ACCESS_KEY_ID ??= 'test-key';
+  process.env.AVATAR_STORAGE_SECRET_ACCESS_KEY ??= 'test-secret';
+  process.env.AVATAR_PUBLIC_BASE_URL ??= 'https://cdn.example.com';
+}
 
 describe('Profile (e2e)', () => {
   let app: INestApplication;
@@ -17,6 +25,9 @@ describe('Profile (e2e)', () => {
   };
 
   beforeAll(async () => {
+    ensureAvatarEnv();
+
+    const { AppModule } = await import('../../src/app.module');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(AvatarStorageService)
       .useValue(avatarStorage)
