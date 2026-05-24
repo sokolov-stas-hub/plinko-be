@@ -12,6 +12,7 @@ import {
 import {
   ApiBody,
   ApiBadRequestResponse,
+  ApiBadGatewayResponse,
   ApiBearerAuth,
   ApiConsumes,
   ApiCreatedResponse,
@@ -67,6 +68,7 @@ export class ProfileController {
   @ApiOperation({ summary: 'Upload the authenticated player avatar' })
   @ApiCreatedResponse({ type: AvatarUploadResponse })
   @ApiBadRequestResponse({ description: 'Invalid or missing avatar image' })
+  @ApiBadGatewayResponse({ description: 'Avatar storage unavailable' })
   uploadAvatar(@CurrentUser() u: AuthUser, @UploadedFile() file?: Express.Multer.File) {
     if (!file) throw new BadRequestException('avatar image is required');
     return this.profile.uploadAvatar(u.id, file.buffer);

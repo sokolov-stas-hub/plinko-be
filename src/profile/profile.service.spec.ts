@@ -35,4 +35,62 @@ describe('ProfileService', () => {
       dailyStreak: 2,
     });
   });
+
+  it('creates a missing profile before uploading an avatar', async () => {
+    const user = {
+      id: 'legacy-user',
+      email: 'legacy.user@test.local',
+      balance: 10_000_000_000n,
+      profile: {
+        nickname: 'legacy_user_abc',
+        avatarUrl: 'https://cdn.example.com/avatars/legacy-user/avatar.webp',
+      },
+      progress: {
+        xp: 0,
+        dailyStreak: 0,
+      },
+    };
+    const prisma = {
+      user: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce({
+            id: user.id,
+            email: user.email,
+            profile: null,
+          })
+          .mockResolvedValue(user),
+      },
+      userProfile: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ userId: user.id, nickname: 'legacy_user_abc' }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+    } as unknown as PrismaService;
+    const avatarStorage = {
+      uploadAvatar: jest.fn().mockResolvedValue({
+        avatarKey: 'avatars/legacy-user/avatar.webp',
+        avatarUrl: 'https://cdn.example.com/avatars/legacy-user/avatar.webp',
+      }),
+    } as unknown as AvatarStorageService;
+    const service = new ProfileService(prisma, avatarStorage);
+
+    const profile = await service.uploadAvatar(user.id, Buffer.from('image'));
+
+    expect(prisma.userProfile.create).toHaveBeenCalledWith({
+      data: { userId: user.id, nickname: expect.stringMatching(/^legacy_user_[0-9a-f]{6}$/) },
+    });
+    expect((avatarStorage.uploadAvatar as jest.Mock).mock.invocationCallOrder[0]).toBeGreaterThan(
+      (prisma.userProfile.create as jest.Mock).mock.invocationCallOrder[0],
+    );
+    expect(prisma.userProfile.update).toHaveBeenCalledWith({
+      where: { userId: user.id },
+      data: {
+        avatarKey: 'avatars/legacy-user/avatar.webp',
+        avatarUrl: 'https://cdn.example.com/avatars/legacy-user/avatar.webp',
+        avatarUpdatedAt: expect.any(Date),
+      },
+    });
+    expect(profile.avatarUrl).toBe('https://cdn.example.com/avatars/legacy-user/avatar.webp');
+  });
 });
