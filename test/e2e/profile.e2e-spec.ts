@@ -48,6 +48,9 @@ describe('Profile (e2e)', () => {
     expect(res.body.balance).toBe('10000000000');
     expect(res.body.progression.level).toBe(1);
     expect(res.body.progression.xp).toBe(0);
+    expect(res.body.progression.xpForCurrentLevel).toBe(0);
+    expect(res.body.progression.xpForNextLevel).toBe(100);
+    expect(res.body.progression.xpIntoCurrentLevel).toBe(0);
     expect(res.body.progression.dailyStreak).toBe(0);
   });
 

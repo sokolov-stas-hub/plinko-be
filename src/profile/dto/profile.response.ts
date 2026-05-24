@@ -5,6 +5,12 @@ export class ProfileProgressionSummary {
   level!: number;
   /** Current experience points. */
   xp!: number;
+  /** XP required to reach the current level. */
+  xpForCurrentLevel!: number;
+  /** XP required to reach the next level. */
+  xpForNextLevel!: number;
+  /** XP earned since reaching the current level. */
+  xpIntoCurrentLevel!: number;
   /** Consecutive daily claims. */
   dailyStreak!: number;
 }

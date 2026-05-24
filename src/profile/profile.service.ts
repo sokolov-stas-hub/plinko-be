@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { describeLevel } from '../progression/level-curve';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertValidNickname, defaultNicknameBase } from './nickname';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -60,6 +61,8 @@ export class ProfileService {
   }
 
   private toResponse(user: ProfileAggregate): ProfileResponse {
+    const level = describeLevel(user.progress?.xp ?? 0);
+
     return {
       id: user.id,
       email: user.email,
@@ -67,8 +70,11 @@ export class ProfileService {
       avatarUrl: user.profile?.avatarUrl ?? null,
       balance: user.balance,
       progression: {
-        level: user.progress?.level ?? 1,
-        xp: user.progress?.xp ?? 0,
+        level: level.level,
+        xp: level.xp,
+        xpForCurrentLevel: level.xpForCurrentLevel,
+        xpForNextLevel: level.xpForNextLevel,
+        xpIntoCurrentLevel: level.xpIntoCurrentLevel,
         dailyStreak: user.progress?.dailyStreak ?? 0,
       },
     };
