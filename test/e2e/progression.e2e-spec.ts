@@ -2,6 +2,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { BigIntInterceptor } from '../../src/common/interceptors/bigint.interceptor';
+import { PrismaService } from '../../src/prisma/prisma.service';
 
 function ensureAvatarEnv() {
   process.env.AVATAR_STORAGE_ENDPOINT ??= 'https://example.r2.cloudflarestorage.com';
@@ -14,7 +15,9 @@ function ensureAvatarEnv() {
 
 describe('Progression (e2e)', () => {
   let app: INestApplication;
+  let prisma: PrismaService;
   let access = '';
+  let userId = '';
 
   beforeAll(async () => {
     ensureAvatarEnv();
@@ -26,11 +29,13 @@ describe('Progression (e2e)', () => {
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }));
     app.useGlobalInterceptors(new BigIntInterceptor());
     await app.init();
+    prisma = app.get(PrismaService);
 
     const reg = await request(app.getHttpServer())
       .post('/api/v1/auth/register')
       .send({ email: `progression_${Date.now()}@test.local`, password: 'hunter22' });
     access = reg.body.accessToken;
+    userId = reg.body.user.id;
   });
 
   afterAll(async () => app.close());
@@ -66,5 +71,25 @@ describe('Progression (e2e)', () => {
       .post('/api/v1/progression/daily/claim')
       .set('Authorization', `Bearer ${access}`)
       .expect(409);
+
+    const afterDuplicate = await request(app.getHttpServer())
+      .get('/api/v1/progression/me')
+      .set('Authorization', `Bearer ${access}`)
+      .expect(200);
+    expect(afterDuplicate.body.xp).toBe(25);
+    expect(afterDuplicate.body.daily.canClaim).toBe(false);
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    expect(user.balance).toBe(10_500_000_000n);
+
+    const ledgerCount = await prisma.progressionRewardLedger.count({
+      where: {
+        userId,
+        source: 'DAILY_BONUS',
+        sourceKey: claim.body.reward.sourceKey,
+        periodKey: claim.body.reward.periodKey,
+      },
+    });
+    expect(ledgerCount).toBe(1);
   });
 });

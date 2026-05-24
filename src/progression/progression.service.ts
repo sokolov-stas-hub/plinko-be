@@ -230,7 +230,9 @@ export class ProgressionService {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
     if (error.code !== 'P2002') return false;
     const target = error.meta?.target;
-    if (Array.isArray(target)) return target.includes('userId') && target.includes('source');
+    if (Array.isArray(target)) {
+      return ['userId', 'source', 'sourceKey', 'periodKey'].every(field => target.includes(field));
+    }
     return typeof target === 'string' && target.includes('ProgressionRewardLedger');
   }
 }

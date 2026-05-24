@@ -1,10 +1,12 @@
-import { MissionStatus, MissionType } from '@prisma/client';
+import { ConflictException } from '@nestjs/common';
+import { MissionStatus, MissionType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletService } from '../wallet/wallet.service';
 import { STARTER_MISSIONS } from './mission-definitions';
 import { nextUtcMidnight, periodKey, ProgressionService } from './progression.service';
 
 type PrismaMock = {
+  $transaction?: jest.Mock;
   userProgress: {
     upsert: jest.Mock;
   };
@@ -13,6 +15,14 @@ type PrismaMock = {
     findMany: jest.Mock;
   };
 };
+
+function uniqueConflict(target: string[]): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+    code: 'P2002',
+    clientVersion: 'test',
+    meta: { target },
+  });
+}
 
 describe('ProgressionService', () => {
   it('uses UTC date boundaries for progression periods', () => {
@@ -87,5 +97,35 @@ describe('ProgressionService', () => {
     expect(aggregate.daily.reward.credits).toBe(500_000_000n);
     expect(aggregate.missions.daily).toHaveLength(3);
     expect(aggregate.missions.starter.map(mission => mission.key)).toContain('first_bet');
+  });
+
+  it('maps only the daily reward ledger unique key to claim conflict', async () => {
+    const wallet = { lockAndCredit: jest.fn() };
+    const unrelatedUnique = uniqueConflict(['userId', 'source']);
+    const unrelatedPrisma: PrismaMock = {
+      $transaction: jest.fn().mockRejectedValue(unrelatedUnique),
+      userProgress: { upsert: jest.fn() },
+      userMissionProgress: { createMany: jest.fn(), findMany: jest.fn() },
+    };
+    const unrelatedService = new ProgressionService(
+      unrelatedPrisma as unknown as PrismaService,
+      wallet as unknown as WalletService,
+    );
+
+    await expect(unrelatedService.claimDaily('user-1')).rejects.toBe(unrelatedUnique);
+
+    const ledgerPrisma: PrismaMock = {
+      $transaction: jest
+        .fn()
+        .mockRejectedValue(uniqueConflict(['userId', 'source', 'sourceKey', 'periodKey'])),
+      userProgress: { upsert: jest.fn() },
+      userMissionProgress: { createMany: jest.fn(), findMany: jest.fn() },
+    };
+    const ledgerService = new ProgressionService(
+      ledgerPrisma as unknown as PrismaService,
+      wallet as unknown as WalletService,
+    );
+
+    await expect(ledgerService.claimDaily('user-1')).rejects.toBeInstanceOf(ConflictException);
   });
 });
