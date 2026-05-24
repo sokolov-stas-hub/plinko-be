@@ -1,5 +1,6 @@
 import { MissionStatus, MissionType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { WalletService } from '../wallet/wallet.service';
 import { STARTER_MISSIONS } from './mission-definitions';
 import { nextUtcMidnight, periodKey, ProgressionService } from './progression.service';
 
@@ -51,7 +52,11 @@ describe('ProgressionService', () => {
         ]),
       },
     };
-    const service = new ProgressionService(prisma as unknown as PrismaService);
+    const wallet = { lockAndCredit: jest.fn() };
+    const service = new ProgressionService(
+      prisma as unknown as PrismaService,
+      wallet as unknown as WalletService,
+    );
 
     const aggregate = await service.getMe('user-1');
 

@@ -1,4 +1,4 @@
-import { MissionStatus, MissionType } from '@prisma/client';
+import { MissionStatus, MissionType, RewardSource } from '@prisma/client';
 
 export type ProgressionReward = {
   credits: bigint;
@@ -36,4 +36,18 @@ export type ProgressionAggregate = {
     daily: ProgressionMission[];
     starter: ProgressionMission[];
   };
+};
+
+export type ClaimedReward = {
+  source: RewardSource;
+  sourceKey: string;
+  periodKey: string;
+  credits: bigint;
+  xp: number;
+  balanceAfter: bigint;
+};
+
+export type ClaimRewardAggregate = {
+  reward: ClaimedReward;
+  progression: ProgressionAggregate;
 };

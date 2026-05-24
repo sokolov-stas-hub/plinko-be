@@ -48,4 +48,23 @@ describe('Progression (e2e)', () => {
     expect(res.body.missions.daily).toHaveLength(3);
     expect(res.body.missions.starter.map((m: { key: string }) => m.key)).toContain('first_bet');
   });
+
+  it('claims daily bonus once and updates balance and XP', async () => {
+    const claim = await request(app.getHttpServer())
+      .post('/api/v1/progression/daily/claim')
+      .set('Authorization', `Bearer ${access}`)
+      .expect(201);
+
+    expect(claim.body.reward.source).toBe('DAILY_BONUS');
+    expect(claim.body.reward.credits).toBe('500000000');
+    expect(claim.body.reward.xp).toBe(25);
+    expect(claim.body.reward.balanceAfter).toBe('10500000000');
+    expect(claim.body.progression.xp).toBe(25);
+    expect(claim.body.progression.daily.canClaim).toBe(false);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/progression/daily/claim')
+      .set('Authorization', `Bearer ${access}`)
+      .expect(409);
+  });
 });

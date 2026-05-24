@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
-import { MissionStatus, MissionType, Prisma, UserMissionProgress } from '@prisma/client';
+import { ConflictException, Injectable } from '@nestjs/common';
+import { MissionStatus, MissionType, Prisma, RewardSource, UserMissionProgress, UserProgress } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { describeLevel } from './level-curve';
+import { WalletService } from '../wallet/wallet.service';
+import { describeLevel, levelForXp } from './level-curve';
 import { MissionDefinition, selectDailyMissions, STARTER_MISSIONS } from './mission-definitions';
-import { ProgressionAggregate, ProgressionMission } from './types';
+import { ClaimRewardAggregate, ProgressionAggregate, ProgressionMission } from './types';
 
 const STARTER_PERIOD_KEY = 'starter';
 const DAILY_BONUS_REWARD = {
@@ -21,7 +22,10 @@ export function nextUtcMidnight(date = new Date()): Date {
 
 @Injectable()
 export class ProgressionService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly wallet: WalletService,
+  ) {}
 
   async getMe(userId: string): Promise<ProgressionAggregate> {
     const now = new Date();
@@ -34,7 +38,7 @@ export class ProgressionService {
       update: {},
     });
 
-    await this.ensureMissions(userId, today, dailyDefinitions, STARTER_PERIOD_KEY, STARTER_MISSIONS);
+    await this.ensureMissions(this.prisma, userId, today, dailyDefinitions, STARTER_PERIOD_KEY, STARTER_MISSIONS);
 
     const missionRows = await this.prisma.userMissionProgress.findMany({
       where: {
@@ -50,20 +54,90 @@ export class ProgressionService {
 
     return {
       ...level,
-      daily: {
-        canClaim: periodKey(progress.lastDailyClaimAt ?? new Date(0)) !== today,
-        streak: progress.dailyStreak,
-        nextClaimAt: nextUtcMidnight(now).toISOString(),
-        reward: DAILY_BONUS_REWARD,
-      },
-      missions: {
-        daily: this.serializeMissions(dailyDefinitions, missionRows, today),
-        starter: this.serializeMissions(STARTER_MISSIONS, missionRows, STARTER_PERIOD_KEY),
-      },
+      ...this.serializeDailyAndMissions(now, today, progress, dailyDefinitions, missionRows),
     };
   }
 
+  async claimDaily(userId: string): Promise<ClaimRewardAggregate> {
+    const now = new Date();
+    const today = periodKey(now);
+    const dailyDefinitions = selectDailyMissions(userId, today);
+
+    try {
+      return await this.prisma.$transaction(async tx => {
+        const { balanceAfter } = await this.wallet.lockAndCredit(tx, userId, DAILY_BONUS_REWARD.credits);
+
+        const progress = await tx.userProgress.upsert({
+          where: { userId },
+          create: { userId },
+          update: {},
+        });
+        if (periodKey(progress.lastDailyClaimAt ?? new Date(0)) === today) {
+          throw new ConflictException('Daily bonus already claimed');
+        }
+
+        const newXp = progress.xp + DAILY_BONUS_REWARD.xp;
+        const newLevel = levelForXp(newXp);
+        const updatedProgress = await tx.userProgress.update({
+          where: { userId },
+          data: {
+            xp: newXp,
+            level: newLevel,
+            dailyStreak: this.nextDailyStreak(progress.lastDailyClaimAt, progress.dailyStreak, now),
+            lastDailyClaimAt: now,
+          },
+        });
+
+        await tx.progressionRewardLedger.create({
+          data: {
+            userId,
+            source: RewardSource.DAILY_BONUS,
+            sourceKey: today,
+            periodKey: today,
+            creditAmount: DAILY_BONUS_REWARD.credits,
+            xpAmount: DAILY_BONUS_REWARD.xp,
+            balanceAfter,
+            levelBefore: progress.level,
+            levelAfter: newLevel,
+          },
+        });
+
+        await this.ensureMissions(tx, userId, today, dailyDefinitions, STARTER_PERIOD_KEY, STARTER_MISSIONS);
+        const missionRows = await tx.userMissionProgress.findMany({
+          where: {
+            userId,
+            OR: [
+              { periodKey: today, type: MissionType.DAILY },
+              { periodKey: STARTER_PERIOD_KEY, type: MissionType.STARTER },
+            ],
+          },
+        });
+
+        return {
+          reward: {
+            source: RewardSource.DAILY_BONUS,
+            sourceKey: today,
+            periodKey: today,
+            credits: DAILY_BONUS_REWARD.credits,
+            xp: DAILY_BONUS_REWARD.xp,
+            balanceAfter,
+          },
+          progression: {
+            ...describeLevel(updatedProgress.xp),
+            ...this.serializeDailyAndMissions(now, today, updatedProgress, dailyDefinitions, missionRows),
+          },
+        };
+      });
+    } catch (error) {
+      if (this.isRewardLedgerUniqueConflict(error)) {
+        throw new ConflictException('Daily bonus already claimed');
+      }
+      throw error;
+    }
+  }
+
   private async ensureMissions(
+    db: Pick<Prisma.TransactionClient, 'userMissionProgress'>,
     userId: string,
     dailyPeriodKey: string,
     dailyDefinitions: readonly MissionDefinition[],
@@ -75,7 +149,7 @@ export class ProgressionService {
       ...starterDefinitions.map(definition => this.createMissionRow(userId, starterPeriodKey, definition)),
     ];
 
-    await this.prisma.userMissionProgress.createMany({
+    await db.userMissionProgress.createMany({
       data,
       skipDuplicates: true,
     });
@@ -122,5 +196,41 @@ export class ProgressionService {
         claimedAt: row?.claimedAt?.toISOString() ?? null,
       };
     });
+  }
+
+  private serializeDailyAndMissions(
+    now: Date,
+    today: string,
+    progress: Pick<UserProgress, 'lastDailyClaimAt' | 'dailyStreak'>,
+    dailyDefinitions: readonly MissionDefinition[],
+    missionRows: UserMissionProgress[],
+  ): Pick<ProgressionAggregate, 'daily' | 'missions'> {
+    return {
+      daily: {
+        canClaim: periodKey(progress.lastDailyClaimAt ?? new Date(0)) !== today,
+        streak: progress.dailyStreak,
+        nextClaimAt: nextUtcMidnight(now).toISOString(),
+        reward: DAILY_BONUS_REWARD,
+      },
+      missions: {
+        daily: this.serializeMissions(dailyDefinitions, missionRows, today),
+        starter: this.serializeMissions(STARTER_MISSIONS, missionRows, STARTER_PERIOD_KEY),
+      },
+    };
+  }
+
+  private nextDailyStreak(lastDailyClaimAt: Date | null, currentStreak: number, now: Date): number {
+    if (lastDailyClaimAt && periodKey(lastDailyClaimAt) === periodKey(new Date(now.getTime() - 24 * 60 * 60 * 1000))) {
+      return currentStreak + 1;
+    }
+    return 1;
+  }
+
+  private isRewardLedgerUniqueConflict(error: unknown): boolean {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+    if (error.code !== 'P2002') return false;
+    const target = error.meta?.target;
+    if (Array.isArray(target)) return target.includes('userId') && target.includes('source');
+    return typeof target === 'string' && target.includes('ProgressionRewardLedger');
   }
 }
