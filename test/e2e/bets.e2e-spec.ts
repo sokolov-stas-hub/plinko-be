@@ -1,9 +1,17 @@
 import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
-import { AppModule } from '../../src/app.module';
 import { BigIntInterceptor } from '../../src/common/interceptors/bigint.interceptor';
 import { PrismaService } from '../../src/prisma/prisma.service';
+
+function ensureAvatarEnv() {
+  process.env.AVATAR_STORAGE_ENDPOINT ??= 'https://example.r2.cloudflarestorage.com';
+  process.env.AVATAR_STORAGE_REGION ??= 'auto';
+  process.env.AVATAR_STORAGE_BUCKET ??= 'plinko-avatars';
+  process.env.AVATAR_STORAGE_ACCESS_KEY_ID ??= 'test-key';
+  process.env.AVATAR_STORAGE_SECRET_ACCESS_KEY ??= 'test-secret';
+  process.env.AVATAR_PUBLIC_BASE_URL ??= 'https://cdn.example.com';
+}
 
 describe('Bets (e2e)', () => {
   let app: INestApplication;
@@ -12,6 +20,9 @@ describe('Bets (e2e)', () => {
   let userId = '';
 
   beforeAll(async () => {
+    ensureAvatarEnv();
+
+    const { AppModule } = await import('../../src/app.module');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1', { exclude: ['health'] });
@@ -50,6 +61,19 @@ describe('Bets (e2e)', () => {
     expect(res.body.bucketIndex).toBeGreaterThanOrEqual(0);
     expect(res.body.bucketIndex).toBeLessThanOrEqual(10);
     expect(BigInt(res.body.balanceAfter)).toBeLessThan(10_000_000_000n);
+    expect(Array.isArray(res.body.progressionEvents)).toBe(true);
+    expect(
+      res.body.progressionEvents.some(
+        (e: { type: string }) => e.type === 'MISSION_COMPLETED' || e.type === 'MISSION_PROGRESS',
+      ),
+    ).toBe(true);
+
+    const progression = await request(app.getHttpServer())
+      .get('/api/v1/progression/me')
+      .set('Authorization', `Bearer ${access}`)
+      .expect(200);
+    const firstBetMission = progression.body.missions.starter.find((m: { key: string }) => m.key === 'first_bet');
+    expect(firstBetMission.status).toMatch(/COMPLETED|CLAIMED/);
   });
 
   it('rejects bet with insufficient balance', async () => {

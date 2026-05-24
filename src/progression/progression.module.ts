@@ -7,5 +7,6 @@ import { ProgressionService } from './progression.service';
   imports: [WalletModule],
   controllers: [ProgressionController],
   providers: [ProgressionService],
+  exports: [ProgressionService],
 })
 export class ProgressionModule {}

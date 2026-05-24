@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { ConfigService } from '@nestjs/config';
 import { Bet, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProgressionService } from '../progression/progression.service';
 import { SeedsService } from '../seeds/seeds.service';
 import { WalletService } from '../wallet/wallet.service';
 import { play } from '../game/engine';
@@ -13,6 +14,7 @@ export class BetsService {
     private readonly prisma: PrismaService,
     private readonly seeds: SeedsService,
     private readonly wallet: WalletService,
+    private readonly progression: ProgressionService,
     private readonly cfg: ConfigService,
   ) {}
 
@@ -47,6 +49,12 @@ export class BetsService {
             balanceAfter,
           },
         });
+        const progressionEvents = await this.progression.recordBet(tx, userId, {
+          amount: bet.amount,
+          payout: bet.payout,
+          multiplier: Number(bet.multiplier),
+          risk: bet.risk,
+        });
 
         return {
           betId: bet.id,
@@ -63,6 +71,13 @@ export class BetsService {
             clientSeed: seed.clientSeed,
             nonce: nonceAtBet,
           },
+          progressionEvents: progressionEvents.map(event => ({
+            type: event.type,
+            missionId: event.missionId,
+            key: event.missionKey,
+            progress: event.progress,
+            target: event.target,
+          })),
         };
       },
       { maxWait: 30_000, timeout: 30_000 },

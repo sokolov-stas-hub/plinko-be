@@ -9,6 +9,16 @@ export class BetSeedRef {
   nonce!: number;
 }
 
+export class ProgressionEventResponse {
+  type!: 'MISSION_PROGRESS' | 'MISSION_COMPLETED' | 'LEVEL_UP';
+  missionId?: string;
+  key?: string;
+  progress?: number;
+  target?: number;
+  levelBefore?: number;
+  levelAfter?: number;
+}
+
 export class BetResponse {
   /** Bet UUID. */
   betId!: string;
@@ -32,6 +42,8 @@ export class BetResponse {
   createdAt?: string;
   @ApiPropertyOptional({ type: () => BetSeedRef })
   seed?: BetSeedRef;
+  @ApiPropertyOptional({ type: () => ProgressionEventResponse, isArray: true })
+  progressionEvents?: ProgressionEventResponse[];
 }
 
 export class BetListResponse {
