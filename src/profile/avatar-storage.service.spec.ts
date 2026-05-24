@@ -1,6 +1,7 @@
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { BadGatewayException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import sharp from 'sharp';
 import { AvatarStorageService } from './avatar-storage.service';
 
 describe('AvatarStorageService', () => {
@@ -35,6 +36,26 @@ describe('AvatarStorageService', () => {
 
     await expect(service.uploadAvatar('user-1', gif)).rejects.toThrow(BadRequestException);
     await expect(service.uploadAvatar('user-1', gif)).rejects.toThrow('avatar image must be a JPEG, PNG, or WebP image');
+  });
+
+  it('maps images over the decoded pixel limit to BadRequestException', async () => {
+    const image = await sharp({
+      create: {
+        width: 4097,
+        height: 4097,
+        channels: 3,
+        background: '#ffffff',
+      },
+    })
+      .png()
+      .toBuffer();
+    const service = new AvatarStorageService(cfg);
+    const send = jest.fn().mockResolvedValue({});
+    Object.defineProperty(service, 's3', { value: { send } });
+
+    await expect(service.uploadAvatar('user-1', image)).rejects.toThrow(BadRequestException);
+    await expect(service.uploadAvatar('user-1', image)).rejects.toThrow('avatar image is invalid');
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('maps storage failures to BadGatewayException', async () => {

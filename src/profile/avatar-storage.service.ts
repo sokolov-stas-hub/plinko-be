@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import sharp from 'sharp';
 
 const SUPPORTED_AVATAR_FORMATS = new Set(['jpeg', 'png', 'webp']);
+const MAX_AVATAR_INPUT_PIXELS = 4096 * 4096;
 
 @Injectable()
 export class AvatarStorageService {
@@ -28,7 +29,7 @@ export class AvatarStorageService {
   async uploadAvatar(userId: string, image: Buffer): Promise<{ avatarKey: string; avatarUrl: string }> {
     let format: string | undefined;
     try {
-      ({ format } = await sharp(image).metadata());
+      ({ format } = await sharp(image, { limitInputPixels: MAX_AVATAR_INPUT_PIXELS }).metadata());
     } catch {
       throw new BadRequestException('avatar image is invalid');
     }
@@ -38,7 +39,10 @@ export class AvatarStorageService {
 
     let webp: Buffer;
     try {
-      webp = await sharp(image).resize(256, 256, { fit: 'cover' }).webp({ quality: 82 }).toBuffer();
+      webp = await sharp(image, { limitInputPixels: MAX_AVATAR_INPUT_PIXELS })
+        .resize(256, 256, { fit: 'cover' })
+        .webp({ quality: 82 })
+        .toBuffer();
     } catch {
       throw new BadRequestException('avatar image is invalid');
     }
