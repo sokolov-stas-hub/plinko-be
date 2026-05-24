@@ -1,3 +1,11 @@
+export type LevelDescription = {
+  level: number;
+  xp: number;
+  xpForCurrentLevel: number;
+  xpForNextLevel: number;
+  xpIntoCurrentLevel: number;
+};
+
 export function xpForLevel(level: number): number {
   if (!Number.isInteger(level) || level < 1) throw new Error('level must be a positive integer');
   return level === 1 ? 0 : 100 * (level - 1) * (level - 1);
@@ -10,7 +18,7 @@ export function levelForXp(xp: number): number {
   return level;
 }
 
-export function describeLevel(xp: number) {
+export function describeLevel(xp: number): LevelDescription {
   const level = levelForXp(xp);
   return {
     level,
