@@ -15,6 +15,13 @@ describe('UsersService', () => {
       user: {
         create: jest.fn().mockResolvedValue(user),
       },
+      userProfile: {
+        create: jest.fn().mockResolvedValue(undefined),
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      userProgress: {
+        create: jest.fn().mockResolvedValue(undefined),
+      },
     };
     const prisma = {
       $transaction: jest.fn((callback: (txArg: typeof tx) => Promise<unknown>) => callback(tx)),
@@ -34,5 +41,14 @@ describe('UsersService', () => {
       },
     });
     expect(seeds.createForUser).toHaveBeenCalledWith(tx, user.id);
+    expect(tx.userProfile.create).toHaveBeenCalledWith({
+      data: {
+        userId: user.id,
+        nickname: expect.stringMatching(/^demo_[A-Za-z0-9]{6}$/),
+      },
+    });
+    expect(tx.userProgress.create).toHaveBeenCalledWith({
+      data: { userId: user.id },
+    });
   });
 });
