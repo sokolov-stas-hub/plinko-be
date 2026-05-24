@@ -18,10 +18,15 @@ describe('Profile (e2e)', () => {
     await app.init();
 
     const prisma = app.get(PrismaService);
-    await prisma.userProfile.updateMany({
-      where: { nickname: 'new_name_123' },
-      data: { nickname: `old_${Date.now().toString(36)}`.slice(0, 20) },
-    });
+    for (const [index, nickname] of ['new_name_123', 'trimmed_name'].entries()) {
+      await prisma.userProfile.updateMany({
+        where: {
+          nickname,
+          user: { email: { endsWith: '@test.local' } },
+        },
+        data: { nickname: `old_${Date.now().toString(36)}_${index}`.slice(0, 20) },
+      });
+    }
 
     const reg = await request(app.getHttpServer())
       .post('/api/v1/auth/register')
@@ -42,6 +47,7 @@ describe('Profile (e2e)', () => {
     expect(res.body.avatarUrl).toBeNull();
     expect(res.body.balance).toBe('10000000000');
     expect(res.body.progression.level).toBe(1);
+    expect(res.body.progression.xp).toBe(0);
     expect(res.body.progression.dailyStreak).toBe(0);
   });
 
@@ -52,6 +58,13 @@ describe('Profile (e2e)', () => {
       .send({ nickname: 'new_name_123' })
       .expect(200)
       .expect(res => expect(res.body.nickname).toBe('new_name_123'));
+
+    await request(app.getHttpServer())
+      .patch('/api/v1/profile/me')
+      .set('Authorization', `Bearer ${access}`)
+      .send({ nickname: ' trimmed_name ' })
+      .expect(200)
+      .expect(res => expect(res.body.nickname).toBe('trimmed_name'));
 
     await request(app.getHttpServer())
       .patch('/api/v1/profile/me')

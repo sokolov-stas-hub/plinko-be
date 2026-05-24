@@ -68,6 +68,7 @@ export class ProfileService {
       balance: user.balance,
       progression: {
         level: user.progress?.level ?? 1,
+        xp: user.progress?.xp ?? 0,
         dailyStreak: user.progress?.dailyStreak ?? 0,
       },
     };
