@@ -35,4 +35,20 @@ export class WalletService {
     await tx.user.update({ where: { id: userId }, data: { balance: balanceAfter } });
     return { balanceBefore, balanceAfter };
   }
+
+  async lockAndCredit(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    creditAmount: bigint,
+  ): Promise<{ balanceBefore: bigint; balanceAfter: bigint }> {
+    if (creditAmount < 0n) throw new BadRequestException('creditAmount must be non-negative');
+    const rows = await tx.$queryRaw<{ balance: bigint }[]>`
+      SELECT balance FROM "User" WHERE id = ${userId} FOR UPDATE
+    `;
+    if (rows.length === 0) throw new BadRequestException('User not found');
+    const balanceBefore = rows[0].balance;
+    const balanceAfter = balanceBefore + creditAmount;
+    await tx.user.update({ where: { id: userId }, data: { balance: balanceAfter } });
+    return { balanceBefore, balanceAfter };
+  }
 }
