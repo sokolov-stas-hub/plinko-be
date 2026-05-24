@@ -81,7 +81,7 @@ if [ "$GLOBAL_TRIGGERED" -eq 1 ]; then
 elif [ ${#RELATED_FILES[@]} -gt 0 ]; then
   echo "run-related-tests: running unit tests related to ${#RELATED_FILES[@]} file(s)..."
   printf '  %s\n' "${RELATED_FILES[@]}"
-  npm test -- --findRelatedTests "${RELATED_FILES[@]}" || EXIT=$?
+  npm test -- --findRelatedTests "${RELATED_FILES[@]}" --passWithNoTests || EXIT=$?
 else
   echo "run-related-tests: no unit-relevant source/test changes."
 fi

@@ -52,6 +52,10 @@ describe('Bets (e2e)', () => {
   });
 
   it('places a bet and returns deterministic fields', async () => {
+    const startingBalance = 10_000_000_000n;
+    await prisma.user.update({ where: { id: userId }, data: { balance: startingBalance } });
+    await prisma.userMissionProgress.deleteMany({ where: { userId } });
+
     const res = await request(app.getHttpServer())
       .post('/api/v1/bets')
       .set('Authorization', `Bearer ${access}`)
@@ -60,13 +64,14 @@ describe('Bets (e2e)', () => {
     expect(res.body.path).toHaveLength(10);
     expect(res.body.bucketIndex).toBeGreaterThanOrEqual(0);
     expect(res.body.bucketIndex).toBeLessThanOrEqual(10);
-    expect(BigInt(res.body.balanceAfter)).toBeLessThan(10_000_000_000n);
+    expect(BigInt(res.body.balanceAfter)).toBe(startingBalance - 1_000_000n + BigInt(res.body.payout));
     expect(Array.isArray(res.body.progressionEvents)).toBe(true);
     expect(
       res.body.progressionEvents.some(
         (e: { type: string }) => e.type === 'MISSION_COMPLETED' || e.type === 'MISSION_PROGRESS',
       ),
     ).toBe(true);
+    expect(res.body.progressionEvents.some((e: { key?: string }) => e.key === 'first_bet')).toBe(true);
 
     const progression = await request(app.getHttpServer())
       .get('/api/v1/progression/me')
