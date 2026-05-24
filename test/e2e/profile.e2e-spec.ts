@@ -3,6 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { BigIntInterceptor } from '../../src/common/interceptors/bigint.interceptor';
+import { PrismaService } from '../../src/prisma/prisma.service';
 
 describe('Profile (e2e)', () => {
   let app: INestApplication;
@@ -15,6 +16,12 @@ describe('Profile (e2e)', () => {
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }));
     app.useGlobalInterceptors(new BigIntInterceptor());
     await app.init();
+
+    const prisma = app.get(PrismaService);
+    await prisma.userProfile.updateMany({
+      where: { nickname: 'new_name_123' },
+      data: { nickname: `old_${Date.now().toString(36)}`.slice(0, 20) },
+    });
 
     const reg = await request(app.getHttpServer())
       .post('/api/v1/auth/register')
