@@ -18,10 +18,13 @@ export type ProgressionMission = {
   type: MissionType;
   title: string;
   description: string;
+  periodKey: string;
   target: number;
   progress: number;
   status: MissionStatus;
-  reward: ProgressionReward;
+  creditReward: bigint;
+  xpReward: number;
+  claimable: boolean;
   completedAt: string | null;
   claimedAt: string | null;
 };
@@ -48,6 +51,8 @@ export type ClaimedReward = {
   credits: bigint;
   xp: number;
   balanceAfter: bigint;
+  levelBefore: number;
+  levelAfter: number;
 };
 
 export type ClaimRewardAggregate = {

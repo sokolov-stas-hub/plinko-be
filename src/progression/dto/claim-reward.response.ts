@@ -24,6 +24,10 @@ export class ClaimedRewardResponse {
   /** User balance after applying this reward. Serialized as string because it can exceed Number.MAX_SAFE_INTEGER. */
   @ApiProperty({ type: String, example: '10500000000' })
   balanceAfter!: bigint;
+  /** User level before applying the reward XP. */
+  levelBefore!: number;
+  /** User level after applying the reward XP. */
+  levelAfter!: number;
 }
 
 export class ClaimRewardResponse {

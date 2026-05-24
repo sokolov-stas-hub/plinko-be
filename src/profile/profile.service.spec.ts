@@ -93,4 +93,45 @@ describe('ProfileService', () => {
     });
     expect(profile.avatarUrl).toBe('https://cdn.example.com/avatars/legacy-user/avatar.webp');
   });
+
+  it('creates a missing profile on read and returns the persisted nickname', async () => {
+    const userWithoutProfile = {
+      id: 'legacy-read-user',
+      email: 'legacy.read@test.local',
+      balance: 10_000_000_000n,
+      profile: null,
+      progress: {
+        xp: 0,
+        dailyStreak: 0,
+      },
+    };
+    const userWithProfile = {
+      ...userWithoutProfile,
+      profile: {
+        nickname: 'legacy_read_abc',
+        avatarUrl: null,
+      },
+    };
+    const prisma = {
+      user: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce(userWithoutProfile)
+          .mockResolvedValueOnce(userWithoutProfile)
+          .mockResolvedValueOnce(userWithProfile),
+      },
+      userProfile: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ userId: userWithoutProfile.id, nickname: 'legacy_read_abc' }),
+      },
+    } as unknown as PrismaService;
+    const service = new ProfileService(prisma, {} as unknown as AvatarStorageService);
+
+    const profile = await service.getMe(userWithoutProfile.id);
+
+    expect(prisma.userProfile.create).toHaveBeenCalledWith({
+      data: { userId: userWithoutProfile.id, nickname: expect.stringMatching(/^legacy_read_[0-9a-f]{6}$/) },
+    });
+    expect(profile.nickname).toBe('legacy_read_abc');
+  });
 });

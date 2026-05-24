@@ -7,12 +7,19 @@ import { applyBetToMission, nextUtcMidnight, periodKey, ProgressionService } fro
 
 type PrismaMock = {
   $transaction?: jest.Mock;
+  $queryRaw?: jest.Mock;
   userProgress: {
     upsert: jest.Mock;
+    update?: jest.Mock;
   };
   userMissionProgress: {
     createMany: jest.Mock;
     findMany: jest.Mock;
+    findFirst?: jest.Mock;
+    update?: jest.Mock;
+  };
+  progressionRewardLedger?: {
+    create: jest.Mock;
   };
 };
 
@@ -206,6 +213,117 @@ describe('ProgressionService', () => {
     expect(aggregate.daily.reward.credits).toBe(500_000_000n);
     expect(aggregate.missions.daily).toHaveLength(3);
     expect(aggregate.missions.starter.map(mission => mission.key)).toContain('first_bet');
+  });
+
+  it('shows the next daily reward tier after a day-1 claim', async () => {
+    const prisma: PrismaMock = {
+      userProgress: {
+        upsert: jest.fn().mockResolvedValue({
+          userId: 'user-1',
+          xp: 25,
+          level: 1,
+          dailyStreak: 1,
+          lastDailyClaimAt: new Date(),
+        }),
+      },
+      userMissionProgress: {
+        createMany: jest.fn().mockResolvedValue({ count: 0 }),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const service = new ProgressionService(
+      prisma as unknown as PrismaService,
+      { lockAndCredit: jest.fn() } as unknown as WalletService,
+    );
+
+    const aggregate = await service.getMe('user-1');
+
+    expect(aggregate.daily.canClaim).toBe(false);
+    expect(aggregate.daily.streak).toBe(1);
+    expect(aggregate.daily.reward).toEqual({ credits: 750_000_000n, xp: 35 });
+  });
+
+  it('locks progress before crediting and calculates mission XP from the locked row', async () => {
+    const mission = {
+      ...missionFor('first_bet', { status: MissionStatus.COMPLETED, progress: 1 }),
+      periodKey: 'starter',
+      creditReward: 500_000_000n,
+      xpReward: 50,
+    };
+    const tx: PrismaMock = {
+      $queryRaw: jest.fn().mockResolvedValue([
+        {
+          userId: 'user-1',
+          xp: 95,
+          level: 1,
+          dailyStreak: 0,
+          lastDailyClaimAt: null,
+        },
+      ]),
+      userProgress: {
+        upsert: jest.fn().mockResolvedValue({
+          userId: 'user-1',
+          xp: 25,
+          level: 1,
+          dailyStreak: 0,
+          lastDailyClaimAt: null,
+        }),
+        update: jest.fn().mockResolvedValue({
+          userId: 'user-1',
+          xp: 145,
+          level: 2,
+          dailyStreak: 0,
+          lastDailyClaimAt: null,
+        }),
+      },
+      userMissionProgress: {
+        createMany: jest.fn().mockResolvedValue({ count: 0 }),
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(mission),
+        update: jest.fn().mockResolvedValue({ ...mission, status: MissionStatus.CLAIMED }),
+      },
+      progressionRewardLedger: {
+        create: jest.fn().mockResolvedValue({}),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn((callback: (client: PrismaMock) => Promise<unknown>) => callback(tx)),
+    };
+    const wallet = {
+      lockAndCredit: jest.fn().mockResolvedValue({ balanceAfter: 10_500_000_000n }),
+    };
+    const service = new ProgressionService(
+      prisma as unknown as PrismaService,
+      wallet as unknown as WalletService,
+    );
+
+    const result = await service.claimMission('user-1', mission.id);
+
+    expect(tx.userProgress.upsert).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+      create: { userId: 'user-1' },
+      update: {},
+    });
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect((tx.$queryRaw as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(
+      wallet.lockAndCredit.mock.invocationCallOrder[0],
+    );
+    expect(wallet.lockAndCredit.mock.invocationCallOrder[0]).toBeLessThan(
+      (tx.userProgress.update as jest.Mock).mock.invocationCallOrder[0],
+    );
+    expect(tx.userProgress.update).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+      data: { xp: 145, level: 2 },
+    });
+    expect(tx.progressionRewardLedger?.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        levelBefore: 1,
+        levelAfter: 2,
+        xpAmount: 50,
+      }),
+    });
+    expect((result.reward as { levelBefore?: number }).levelBefore).toBe(1);
+    expect((result.reward as { levelAfter?: number }).levelAfter).toBe(2);
   });
 
   it('maps only the daily reward ledger unique key to claim conflict', async () => {

@@ -5,13 +5,19 @@ import { PrismaService } from '../prisma/prisma.service';
 import { WalletService } from '../wallet/wallet.service';
 import { describeLevel, levelForXp } from './level-curve';
 import { DAILY_MISSIONS, MissionDefinition, selectDailyMissions, STARTER_MISSIONS } from './mission-definitions';
-import { ClaimRewardAggregate, ProgressionAggregate, ProgressionEvent, ProgressionMission } from './types';
+import { ClaimRewardAggregate, ProgressionAggregate, ProgressionEvent, ProgressionMission, ProgressionReward } from './types';
 
 const STARTER_PERIOD_KEY = 'starter';
 const DAILY_BONUS_REWARD = {
   credits: 500_000_000n,
   xp: 25,
 };
+const DAILY_BONUS_REWARDS = [
+  DAILY_BONUS_REWARD,
+  { credits: 750_000_000n, xp: 35 },
+  { credits: 1_000_000_000n, xp: 50 },
+  { credits: 1_250_000_000n, xp: 60 },
+] as const;
 const CREDIT_UNIT = 1_000_000n;
 
 export type BetProgressInput = {
@@ -177,25 +183,23 @@ export class ProgressionService {
 
     try {
       return await this.prisma.$transaction(async tx => {
-        const { balanceAfter } = await this.wallet.lockAndCredit(tx, userId, DAILY_BONUS_REWARD.credits);
-
-        const progress = await tx.userProgress.upsert({
-          where: { userId },
-          create: { userId },
-          update: {},
-        });
+        const progress = await this.lockUserProgress(tx, userId);
         if (periodKey(progress.lastDailyClaimAt ?? new Date(0)) === today) {
           throw new ConflictException('Daily bonus already claimed');
         }
 
-        const newXp = progress.xp + DAILY_BONUS_REWARD.xp;
+        const claimStreak = this.nextDailyStreak(progress.lastDailyClaimAt, progress.dailyStreak, now);
+        const reward = this.dailyRewardForStreak(claimStreak);
+        const { balanceAfter } = await this.wallet.lockAndCredit(tx, userId, reward.credits);
+
+        const newXp = progress.xp + reward.xp;
         const newLevel = levelForXp(newXp);
         const updatedProgress = await tx.userProgress.update({
           where: { userId },
           data: {
             xp: newXp,
             level: newLevel,
-            dailyStreak: this.nextDailyStreak(progress.lastDailyClaimAt, progress.dailyStreak, now),
+            dailyStreak: claimStreak,
             lastDailyClaimAt: now,
           },
         });
@@ -206,8 +210,8 @@ export class ProgressionService {
             source: RewardSource.DAILY_BONUS,
             sourceKey: today,
             periodKey: today,
-            creditAmount: DAILY_BONUS_REWARD.credits,
-            xpAmount: DAILY_BONUS_REWARD.xp,
+            creditAmount: reward.credits,
+            xpAmount: reward.xp,
             balanceAfter,
             levelBefore: progress.level,
             levelAfter: newLevel,
@@ -230,9 +234,11 @@ export class ProgressionService {
             source: RewardSource.DAILY_BONUS,
             sourceKey: today,
             periodKey: today,
-            credits: DAILY_BONUS_REWARD.credits,
-            xp: DAILY_BONUS_REWARD.xp,
+            credits: reward.credits,
+            xp: reward.xp,
             balanceAfter,
+            levelBefore: progress.level,
+            levelAfter: newLevel,
           },
           progression: {
             ...describeLevel(updatedProgress.xp),
@@ -314,23 +320,32 @@ export class ProgressionService {
           throw new ConflictException('Mission reward already claimed');
         }
 
-        const progress = await tx.userProgress.upsert({
-          where: { userId },
-          create: { userId },
-          update: {},
+        const progress = await this.lockUserProgress(tx, userId);
+        const lockedMission = await tx.userMissionProgress.findFirst({
+          where: { id: missionId, userId },
         });
-        const newXp = progress.xp + mission.xpReward;
+        if (!lockedMission) {
+          throw new NotFoundException('Mission not found');
+        }
+        if (lockedMission.status === MissionStatus.ACTIVE) {
+          throw new ConflictException('Mission is not complete');
+        }
+        if (lockedMission.status === MissionStatus.CLAIMED) {
+          throw new ConflictException('Mission reward already claimed');
+        }
+
+        const newXp = progress.xp + lockedMission.xpReward;
         const newLevel = levelForXp(newXp);
-        const { balanceAfter } = await this.wallet.lockAndCredit(tx, userId, mission.creditReward);
+        const { balanceAfter } = await this.wallet.lockAndCredit(tx, userId, lockedMission.creditReward);
 
         await tx.progressionRewardLedger.create({
           data: {
             userId,
             source: RewardSource.MISSION,
-            sourceKey: mission.missionKey,
-            periodKey: mission.periodKey,
-            creditAmount: mission.creditReward,
-            xpAmount: mission.xpReward,
+            sourceKey: lockedMission.missionKey,
+            periodKey: lockedMission.periodKey,
+            creditAmount: lockedMission.creditReward,
+            xpAmount: lockedMission.xpReward,
             balanceAfter,
             levelBefore: progress.level,
             levelAfter: newLevel,
@@ -346,7 +361,7 @@ export class ProgressionService {
         });
 
         await tx.userMissionProgress.update({
-          where: { id: mission.id },
+          where: { id: lockedMission.id },
           data: {
             status: MissionStatus.CLAIMED,
             claimedAt: now,
@@ -369,13 +384,15 @@ export class ProgressionService {
         return {
           reward: {
             source: RewardSource.MISSION,
-            sourceKey: mission.missionKey,
-            periodKey: mission.periodKey,
-            missionId: mission.id,
-            missionKey: mission.missionKey,
-            credits: mission.creditReward,
-            xp: mission.xpReward,
+            sourceKey: lockedMission.missionKey,
+            periodKey: lockedMission.periodKey,
+            missionId: lockedMission.id,
+            missionKey: lockedMission.missionKey,
+            credits: lockedMission.creditReward,
+            xp: lockedMission.xpReward,
             balanceAfter,
+            levelBefore: progress.level,
+            levelAfter: newLevel,
           },
           progression: {
             ...describeLevel(updatedProgress.xp),
@@ -428,6 +445,21 @@ export class ProgressionService {
     };
   }
 
+  private async lockUserProgress(tx: Prisma.TransactionClient, userId: string): Promise<UserProgress> {
+    await tx.userProgress.upsert({
+      where: { userId },
+      create: { userId },
+      update: {},
+    });
+    const rows = await tx.$queryRaw<UserProgress[]>`
+      SELECT * FROM "UserProgress" WHERE "userId" = ${userId} FOR UPDATE
+    `;
+    if (rows.length === 0) {
+      throw new NotFoundException('User progress not found');
+    }
+    return rows[0];
+  }
+
   private serializeMissions(
     definitions: readonly MissionDefinition[],
     rows: UserMissionProgress[],
@@ -441,13 +473,13 @@ export class ProgressionService {
         type: definition.type,
         title: definition.title,
         description: definition.description,
+        periodKey: row?.periodKey ?? missionPeriodKey,
         target: row?.target ?? definition.target,
         progress: row?.progress ?? 0,
         status: row?.status ?? MissionStatus.ACTIVE,
-        reward: {
-          credits: row?.creditReward ?? definition.creditReward,
-          xp: row?.xpReward ?? definition.xpReward,
-        },
+        creditReward: row?.creditReward ?? definition.creditReward,
+        xpReward: row?.xpReward ?? definition.xpReward,
+        claimable: row?.status === MissionStatus.COMPLETED,
         completedAt: row?.completedAt?.toISOString() ?? null,
         claimedAt: row?.claimedAt?.toISOString() ?? null,
       };
@@ -466,7 +498,7 @@ export class ProgressionService {
         canClaim: periodKey(progress.lastDailyClaimAt ?? new Date(0)) !== today,
         streak: progress.dailyStreak,
         nextClaimAt: nextUtcMidnight(now).toISOString(),
-        reward: DAILY_BONUS_REWARD,
+        reward: this.dailyRewardForStreak(this.nextDailyClaimStreak(progress.lastDailyClaimAt, progress.dailyStreak, now)),
       },
       missions: {
         daily: this.serializeMissions(dailyDefinitions, missionRows, today),
@@ -480,6 +512,18 @@ export class ProgressionService {
       return currentStreak + 1;
     }
     return 1;
+  }
+
+  private nextDailyClaimStreak(lastDailyClaimAt: Date | null, currentStreak: number, now: Date): number {
+    if (!lastDailyClaimAt) return 1;
+    if (periodKey(lastDailyClaimAt) === periodKey(now)) {
+      return currentStreak + 1;
+    }
+    return this.nextDailyStreak(lastDailyClaimAt, currentStreak, now);
+  }
+
+  private dailyRewardForStreak(streak: number): ProgressionReward {
+    return DAILY_BONUS_REWARDS[Math.min(Math.max(streak, 1), DAILY_BONUS_REWARDS.length) - 1];
   }
 
   private isRewardLedgerUniqueConflict(error: unknown): boolean {

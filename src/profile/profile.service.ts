@@ -22,12 +22,22 @@ export class ProfileService {
   ) {}
 
   async getMe(userId: string): Promise<ProfileResponse> {
-    const user = await this.prisma.user.findUnique({
+    let user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { profile: true, progress: true },
     });
     if (!user) {
       throw new NotFoundException('User not found');
+    }
+    if (!user.profile) {
+      await this.ensureProfile(userId);
+      user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: { profile: true, progress: true },
+      });
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
     }
     return this.toResponse(user);
   }

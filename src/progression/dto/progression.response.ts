@@ -30,14 +30,21 @@ export class ProgressionMissionResponse {
   title!: string;
   /** User-facing mission description. */
   description!: string;
+  /** UTC period key for daily missions, or "starter" for starter missions. */
+  periodKey!: string;
   /** Required progress to complete the mission. */
   target!: number;
   /** Current progress toward the target. */
   progress!: number;
   /** Current mission state. */
   status!: 'ACTIVE' | 'COMPLETED' | 'CLAIMED';
-  @ApiProperty({ type: () => ProgressionRewardResponse })
-  reward!: ProgressionRewardResponse;
+  /** Credits in minimal units. Serialized as string because it can exceed Number.MAX_SAFE_INTEGER. */
+  @ApiProperty({ type: String, example: '500000000' })
+  creditReward!: bigint;
+  /** Experience points awarded by the mission. */
+  xpReward!: number;
+  /** Whether this mission is complete and not yet claimed. */
+  claimable!: boolean;
   /** ISO 8601 completion timestamp, or null while incomplete. */
   completedAt!: string | null;
   /** ISO 8601 claim timestamp, or null while unclaimed. */
