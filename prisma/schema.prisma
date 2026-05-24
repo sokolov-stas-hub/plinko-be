@@ -14,9 +14,13 @@ model User {
   balance       BigInt   @default(0)
   createdAt     DateTime @default(now())
 
-  bets          Bet[]
-  seeds         Seed[]
-  refreshTokens RefreshToken[]
+  bets            Bet[]
+  seeds           Seed[]
+  refreshTokens   RefreshToken[]
+  profile         UserProfile?
+  progress        UserProgress?
+  missionProgress UserMissionProgress[]
+  rewardLedger    ProgressionRewardLedger[]
 }
 
 model RefreshToken {
@@ -80,4 +84,87 @@ enum Risk {
   LOW
   MEDIUM
   HIGH
+}
+
+model UserProfile {
+  userId          String    @id
+  nickname        String    @unique
+  avatarKey       String?
+  avatarUrl       String?
+  avatarUpdatedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserProgress {
+  userId           String    @id
+  xp               Int       @default(0)
+  level            Int       @default(1)
+  dailyStreak      Int       @default(0)
+  lastDailyClaimAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserMissionProgress {
+  id           String        @id @default(uuid())
+  userId       String
+  missionKey   String
+  periodKey    String
+  type         MissionType
+  target       Int
+  progress     Int           @default(0)
+  metadata     Json?
+  status       MissionStatus @default(ACTIVE)
+  creditReward BigInt
+  xpReward     Int
+  completedAt  DateTime?
+  claimedAt    DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, missionKey, periodKey])
+  @@index([userId, periodKey])
+  @@index([userId, status])
+}
+
+model ProgressionRewardLedger {
+  id           String       @id @default(uuid())
+  userId       String
+  source       RewardSource
+  sourceKey    String
+  periodKey    String?
+  creditAmount BigInt
+  xpAmount     Int
+  balanceAfter BigInt
+  levelBefore  Int
+  levelAfter   Int
+  createdAt    DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, source, sourceKey, periodKey])
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+enum MissionType {
+  DAILY
+  STARTER
+}
+
+enum MissionStatus {
+  ACTIVE
+  COMPLETED
+  CLAIMED
+}
+
+enum RewardSource {
+  DAILY_BONUS
+  MISSION
 }
