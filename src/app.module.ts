@@ -10,6 +10,7 @@ import { WalletModule } from './wallet/wallet.module';
 import { GameModule } from './game/game.module';
 import { BetsModule } from './bets/bets.module';
 import { ProfileModule } from './profile/profile.module';
+import { ProgressionModule } from './progression/progression.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { ProfileModule } from './profile/profile.module';
     GameModule,
     BetsModule,
     ProfileModule,
+    ProgressionModule,
   ],
 })
 export class AppModule {}
