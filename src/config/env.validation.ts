@@ -26,6 +26,24 @@ export class EnvSchema {
 
   @IsEnum(['development', 'test', 'production'])
   NODE_ENV!: 'development' | 'test' | 'production';
+
+  @IsString() @MinLength(1)
+  AVATAR_STORAGE_ENDPOINT!: string;
+
+  @IsString() @MinLength(1)
+  AVATAR_STORAGE_REGION!: string;
+
+  @IsString() @MinLength(1)
+  AVATAR_STORAGE_BUCKET!: string;
+
+  @IsString() @MinLength(1)
+  AVATAR_STORAGE_ACCESS_KEY_ID!: string;
+
+  @IsString() @MinLength(1)
+  AVATAR_STORAGE_SECRET_ACCESS_KEY!: string;
+
+  @IsString() @MinLength(1)
+  AVATAR_PUBLIC_BASE_URL!: string;
 }
 
 export function validateEnv(raw: Record<string, unknown>): EnvSchema {
