@@ -39,14 +39,12 @@ describe('Profile (e2e)', () => {
   });
 
   it('updates nickname and rejects invalid values', async () => {
-    const nickname = `new_${Date.now().toString(36)}`;
-
     await request(app.getHttpServer())
       .patch('/api/v1/profile/me')
       .set('Authorization', `Bearer ${access}`)
-      .send({ nickname })
+      .send({ nickname: 'new_name_123' })
       .expect(200)
-      .expect(res => expect(res.body.nickname).toBe(nickname));
+      .expect(res => expect(res.body.nickname).toBe('new_name_123'));
 
     await request(app.getHttpServer())
       .patch('/api/v1/profile/me')
